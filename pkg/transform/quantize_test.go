@@ -16,10 +16,10 @@ func TestQuantizeFloat32ToUint8(t *testing.T) {
 		expected  uint8
 	}{
 		{"zero", 0.0, 0.00784314, 128.0, 128},
-		{"positive", 0.5, 0.00784314, 128.0, 192},   // 0.5/0.00784314 + 128 = 191.75 -> 192
-		{"negative", -0.5, 0.00784314, 128.0, 64},   // -0.5/0.00784314 + 128 = 64.25 -> 64
-		{"max", 1.0, 0.00784314, 128.0, 255},        // Should clip to 255
-		{"min", -1.0, 0.0078125, 128.0, 0},          // -1.0/0.0078125 + 128 = 0 exactly
+		{"positive", 0.5, 0.00784314, 128.0, 192},
+		{"negative", -0.5, 0.00784314, 128.0, 64},
+		{"max", 1.0, 0.00784314, 128.0, 255},
+		{"min", -1.0, 0.0078125, 128.0, 0},
 	}
 
 	for _, tt := range tests {
@@ -80,9 +80,8 @@ func TestQuantizeRoundTrip(t *testing.T) {
 		quantized := Quantize(original, qi)
 		dequantized := Dequantize(quantized, qi)
 
-		// Should be within one quantization step
 		diff := float32(math.Abs(float64(dequantized - original)))
-		maxDiff := qi.Scale * 2 // Allow for rounding
+		maxDiff := qi.Scale * 2
 
 		if diff > maxDiff {
 			t.Errorf("round trip error for %f: got %f (diff %f > %f)",
@@ -97,7 +96,6 @@ func TestQuantizeClipping(t *testing.T) {
 		ZeroPoint: 128.0,
 	}
 
-	// Values that should clip to max (255)
 	highValues := []float32{1.5, 2.0, 10.0, 100.0}
 	for _, v := range highValues {
 		result := Quantize(v, qi)
@@ -106,7 +104,6 @@ func TestQuantizeClipping(t *testing.T) {
 		}
 	}
 
-	// Values that should clip to min (0)
 	lowValues := []float32{-1.5, -2.0, -10.0, -100.0}
 	for _, v := range lowValues {
 		result := Quantize(v, qi)
@@ -117,7 +114,6 @@ func TestQuantizeClipping(t *testing.T) {
 }
 
 func TestQuantizeZeroPoint(t *testing.T) {
-	// Test with different zero points
 	tests := []struct {
 		zeroPoint float32
 	}{
@@ -134,7 +130,6 @@ func TestQuantizeZeroPoint(t *testing.T) {
 				ZeroPoint: tt.zeroPoint,
 			}
 
-			// Zero input should map to zero point
 			result := Quantize(0.0, qi)
 			expected := uint8(tt.zeroPoint)
 			if result != expected {
@@ -156,7 +151,6 @@ func TestQuantizeBatchData(t *testing.T) {
 
 	QuantizeBatch(input, output, qi)
 
-	// Check results
 	expected := []uint8{0, 64, 128, 192, 255}
 	for i, e := range expected {
 		diff := int(output[i]) - int(e)
@@ -177,14 +171,12 @@ func TestDequantizeBatchData(t *testing.T) {
 
 	DequantizeBatch(input, output, qi)
 
-	// Check results are in expected ranges
 	for i, v := range output {
 		if v < -1.1 || v > 1.1 {
 			t.Errorf("output[%d] = %f, expected in [-1.0, 1.0]", i, v)
 		}
 	}
 
-	// Verify middle value is close to 0
 	if math.Abs(float64(output[2])) > 0.01 {
 		t.Errorf("output[2] (from 128) = %f, expected ~0", output[2])
 	}
@@ -196,7 +188,6 @@ func TestQuantizePreservesOrder(t *testing.T) {
 		ZeroPoint: 128.0,
 	}
 
-	// Quantization should preserve ordering
 	values := []float32{-0.8, -0.4, 0.0, 0.4, 0.8}
 	var prevQuantized uint8 = 0
 
@@ -245,54 +236,11 @@ func BenchmarkQuantizeBatch1000(b *testing.B) {
 	output := make([]uint8, 1000)
 
 	for i := range input {
-		input[i] = float32(i) / 500.0 - 1.0
+		input[i] = float32(i)/500.0 - 1.0
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		QuantizeBatch(input, output, qi)
-	}
-}
-
-// QuantInfo contains quantization parameters
-type QuantInfo struct {
-	ZeroPoint float32
-	Scale     float32
-	LimMin    float32
-	LimMax    float32
-}
-
-// Quantize converts a float32 to uint8 using quantization parameters
-func Quantize(value float32, qi QuantInfo) uint8 {
-	// quantized = value / scale + zero_point
-	quantized := value/qi.Scale + qi.ZeroPoint
-
-	// Clip to uint8 range
-	if quantized < 0 {
-		return 0
-	}
-	if quantized > 255 {
-		return 255
-	}
-	return uint8(quantized + 0.5) // Round
-}
-
-// Dequantize converts a uint8 to float32 using quantization parameters
-func Dequantize(value uint8, qi QuantInfo) float32 {
-	// float = (quantized - zero_point) * scale
-	return (float32(value) - qi.ZeroPoint) * qi.Scale
-}
-
-// QuantizeBatch quantizes a batch of float32 values
-func QuantizeBatch(input []float32, output []uint8, qi QuantInfo) {
-	for i, v := range input {
-		output[i] = Quantize(v, qi)
-	}
-}
-
-// DequantizeBatch dequantizes a batch of uint8 values
-func DequantizeBatch(input []uint8, output []float32, qi QuantInfo) {
-	for i, v := range input {
-		output[i] = Dequantize(v, qi)
 	}
 }

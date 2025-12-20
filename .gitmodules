@@ -1,0 +1,3 @@
+[submodule "hailo_model_zoo"]
+	path = hailo_model_zoo
+	url = https://github.com/hailo-ai/hailo_model_zoo.git

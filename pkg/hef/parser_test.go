@@ -24,7 +24,7 @@ func createTestHefFile(t *testing.T, version uint32, protoSize uint32) string {
 	// Write header
 	binary.LittleEndian.PutUint32(data[0:4], HefMagic)
 	binary.LittleEndian.PutUint32(data[4:8], version)
-	binary.LittleEndian.PutUint32(data[8:12], protoSize)
+	binary.BigEndian.PutUint32(data[8:12], protoSize) // HEF uses big-endian for proto size
 
 	// Write dummy proto data (just zeros)
 
@@ -71,7 +71,7 @@ func TestParseFromBuffer(t *testing.T) {
 
 	binary.LittleEndian.PutUint32(data[0:4], HefMagic)
 	binary.LittleEndian.PutUint32(data[4:8], HefVersionV2)
-	binary.LittleEndian.PutUint32(data[8:12], protoSize)
+	binary.BigEndian.PutUint32(data[8:12], protoSize) // HEF uses big-endian for proto size
 
 	header, err := ParseHeader(data)
 	if err != nil {

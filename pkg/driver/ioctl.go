@@ -214,6 +214,16 @@ func (d *DeviceFile) ResetNnCore() error {
 	return d.ioctl(ioctlResetNnCore, nil)
 }
 
+// DescListProgram programs a descriptor list with buffer information
+func (d *DeviceFile) DescListProgram(params *DescListProgramParams) error {
+	return d.ioctl(ioctlDescListProgram, unsafe.Pointer(params))
+}
+
+// VdmaLaunchTransfer launches a VDMA transfer
+func (d *DeviceFile) VdmaLaunchTransfer(params *VdmaLaunchTransferParams) error {
+	return d.ioctl(ioctlVdmaLaunchTransfer, unsafe.Pointer(params))
+}
+
 // ReadNotification reads a device-to-host notification
 func (d *DeviceFile) ReadNotification() ([]byte, error) {
 	var params D2hNotification

@@ -8,7 +8,7 @@ import (
 
 // HEF file format constants
 const (
-	HefMagic        = 0x01484546 // "FEH\x01" in little-endian
+	HefMagic        = 0x46454801 // "\x01HEF" as little-endian uint32
 	HefHeaderSizeV0 = 32
 	HefHeaderSizeV1 = 32
 	HefHeaderSizeV2 = 40
@@ -242,6 +242,7 @@ type Hef struct {
 }
 
 // ParseHeader parses the HEF header from raw bytes
+// Note: HEF files store the proto size field in big-endian format
 func ParseHeader(data []byte) (*HefHeader, error) {
 	if len(data) < 12 {
 		return nil, ErrTruncatedHeader
@@ -250,7 +251,7 @@ func ParseHeader(data []byte) (*HefHeader, error) {
 	header := &HefHeader{
 		Magic:        binary.LittleEndian.Uint32(data[0:4]),
 		Version:      binary.LittleEndian.Uint32(data[4:8]),
-		HefProtoSize: binary.LittleEndian.Uint32(data[8:12]),
+		HefProtoSize: binary.BigEndian.Uint32(data[8:12]), // HEF uses big-endian for proto size
 	}
 
 	if header.Magic != HefMagic {

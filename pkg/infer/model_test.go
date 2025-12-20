@@ -84,7 +84,7 @@ func TestModelFrameSize(t *testing.T) {
 	}
 
 	size := model.InputFrameSize("input")
-	expected := 224 * 224 * 3 * 1 // uint8 = 1 byte
+	expected := 224 * 224 * 3 * 1
 
 	if size != expected {
 		t.Errorf("frame size = %d, expected %d", size, expected)
@@ -150,14 +150,11 @@ func TestModelClose(t *testing.T) {
 		t.Error("model should be marked as closed")
 	}
 
-	// Double close should be safe
 	err = model.Close()
 	if err != nil {
 		t.Errorf("second Close() error = %v", err)
 	}
 }
-
-// Session tests
 
 func TestSessionCreate(t *testing.T) {
 	model := &Model{
@@ -188,10 +185,9 @@ func TestSessionInferSync(t *testing.T) {
 	defer session.Close()
 
 	input := map[string][]byte{
-		"input": make([]byte, 4), // 2x2x1
+		"input": make([]byte, 4),
 	}
 
-	// Note: Without real hardware, this would use mock inference
 	outputs, err := session.Infer(input)
 	if err != nil {
 		t.Logf("Infer error (expected without hardware): %v", err)
@@ -234,8 +230,6 @@ func TestSessionTimeout(t *testing.T) {
 	}
 }
 
-// Batch tests
-
 func TestBatchInference(t *testing.T) {
 	model := &Model{
 		inputs:        []StreamInfo{{Name: "input", Shape: Shape{224, 224, 3}, DataType: DataTypeUint8}},
@@ -246,7 +240,6 @@ func TestBatchInference(t *testing.T) {
 	session, _ := model.NewSession()
 	defer session.Close()
 
-	// Create batch of inputs
 	batchSize := 4
 	frameSize := 224 * 224 * 3
 	inputs := make([]map[string][]byte, batchSize)
@@ -256,7 +249,6 @@ func TestBatchInference(t *testing.T) {
 		}
 	}
 
-	// Note: Without real hardware, this is a mock test
 	results, err := session.InferBatch(inputs)
 	if err != nil {
 		t.Logf("InferBatch error (expected without hardware): %v", err)
@@ -265,146 +257,29 @@ func TestBatchInference(t *testing.T) {
 	_ = results
 }
 
-// Types
+func TestStreamInfoFrameSize(t *testing.T) {
+	tests := []struct {
+		info     StreamInfo
+		expected int
+	}{
+		{
+			StreamInfo{Shape: Shape{224, 224, 3}, DataType: DataTypeUint8},
+			224 * 224 * 3,
+		},
+		{
+			StreamInfo{Shape: Shape{224, 224, 3}, DataType: DataTypeUint16},
+			224 * 224 * 3 * 2,
+		},
+		{
+			StreamInfo{Shape: Shape{1, 1, 1000}, DataType: DataTypeFloat32},
+			1000 * 4,
+		},
+	}
 
-type DataType int
-
-const (
-	DataTypeUint8 DataType = iota
-	DataTypeUint16
-	DataTypeFloat32
-)
-
-type Format int
-
-const (
-	FormatNHWC Format = iota
-	FormatNCHW
-)
-
-type Shape struct {
-	Height   int
-	Width    int
-	Channels int
-}
-
-type StreamInfo struct {
-	Name     string
-	Shape    Shape
-	DataType DataType
-	Format   Format
-}
-
-type Model struct {
-	inputs        []StreamInfo
-	outputs       []StreamInfo
-	networkGroups []string
-	closed        bool
-}
-
-func (m *Model) InputInfo() []StreamInfo {
-	return m.inputs
-}
-
-func (m *Model) OutputInfo() []StreamInfo {
-	return m.outputs
-}
-
-func (m *Model) NetworkGroups() []string {
-	return m.networkGroups
-}
-
-func (m *Model) InputFrameSize(name string) int {
-	for _, info := range m.inputs {
-		if info.Name == name {
-			elemSize := 1
-			switch info.DataType {
-			case DataTypeUint16:
-				elemSize = 2
-			case DataTypeFloat32:
-				elemSize = 4
-			}
-			return info.Shape.Height * info.Shape.Width * info.Shape.Channels * elemSize
+	for _, tt := range tests {
+		size := tt.info.FrameSize()
+		if size != tt.expected {
+			t.Errorf("FrameSize() = %d, expected %d", size, tt.expected)
 		}
 	}
-	return 0
 }
-
-func (m *Model) Validate() error {
-	if len(m.inputs) == 0 {
-		return ErrNoInputs
-	}
-	if len(m.outputs) == 0 {
-		return ErrNoOutputs
-	}
-	return nil
-}
-
-func (m *Model) Close() error {
-	if m.closed {
-		return nil
-	}
-	m.closed = true
-	return nil
-}
-
-func (m *Model) NewSession(opts ...SessionOption) (*Session, error) {
-	s := &Session{
-		model:   m,
-		timeout: 5 * time.Second,
-	}
-	for _, opt := range opts {
-		opt(s)
-	}
-	return s, nil
-}
-
-type Session struct {
-	model   *Model
-	timeout time.Duration
-	closed  bool
-}
-
-type SessionOption func(*Session)
-
-func WithTimeout(d time.Duration) SessionOption {
-	return func(s *Session) {
-		s.timeout = d
-	}
-}
-
-func (s *Session) Infer(inputs map[string][]byte) (map[string][]byte, error) {
-	if s.closed {
-		return nil, ErrSessionClosed
-	}
-	// Mock implementation
-	return nil, ErrNotImplemented
-}
-
-func (s *Session) InferBatch(inputs []map[string][]byte) ([]map[string][]byte, error) {
-	if s.closed {
-		return nil, ErrSessionClosed
-	}
-	// Mock implementation
-	return nil, ErrNotImplemented
-}
-
-func (s *Session) Close() error {
-	if s.closed {
-		return nil
-	}
-	s.closed = true
-	return nil
-}
-
-// Errors
-type inferError string
-
-func (e inferError) Error() string { return string(e) }
-
-const (
-	ErrNoInputs       = inferError("model has no inputs")
-	ErrNoOutputs      = inferError("model has no outputs")
-	ErrSessionClosed  = inferError("session is closed")
-	ErrNotImplemented = inferError("not implemented")
-)

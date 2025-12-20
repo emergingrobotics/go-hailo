@@ -139,82 +139,12 @@ func TestDevicePathValidation(t *testing.T) {
 	}
 }
 
-// DeviceScanner scans for Hailo devices
-type DeviceScanner struct {
-	sysfsPath string
-	devPath   string
-}
-
-// BoardType represents Hailo device type
-type BoardType uint32
-
-const (
-	BoardTypeHailo8 BoardType = 0
-)
-
-// DeviceInfo contains discovered device information
-type DeviceInfo struct {
-	Path      string
-	DeviceID  string
-	BoardType BoardType
-}
-
-// Scan finds all Hailo devices
-func (s *DeviceScanner) Scan() ([]DeviceInfo, error) {
-	if s.sysfsPath == "" {
-		s.sysfsPath = "/sys/class/hailo_chardev"
+func TestNewScanner(t *testing.T) {
+	scanner := NewScanner()
+	if scanner.sysfsPath != "/sys/class/hailo_chardev" {
+		t.Errorf("unexpected sysfs path: %s", scanner.sysfsPath)
 	}
-	if s.devPath == "" {
-		s.devPath = "/dev"
+	if scanner.devPath != "/dev" {
+		t.Errorf("unexpected dev path: %s", scanner.devPath)
 	}
-
-	entries, err := os.ReadDir(s.sysfsPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	var devices []DeviceInfo
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		name := entry.Name()
-		devPath := filepath.Join(s.devPath, name)
-
-		if _, err := os.Stat(devPath); err == nil {
-			devices = append(devices, DeviceInfo{
-				Path:     devPath,
-				DeviceID: name,
-			})
-		}
-	}
-
-	return devices, nil
-}
-
-// ScanByType finds devices of a specific type
-func (s *DeviceScanner) ScanByType(boardType BoardType) ([]DeviceInfo, error) {
-	all, err := s.Scan()
-	if err != nil {
-		return nil, err
-	}
-
-	var filtered []DeviceInfo
-	for _, dev := range all {
-		if dev.BoardType == boardType {
-			filtered = append(filtered, dev)
-		}
-	}
-	return filtered, nil
-}
-
-func isValidHailoDevicePath(path string) bool {
-	if len(path) < 11 { // "/dev/hailo0" minimum
-		return false
-	}
-	return len(path) >= 11 && path[:10] == "/dev/hailo"
 }

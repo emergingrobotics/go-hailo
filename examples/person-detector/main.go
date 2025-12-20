@@ -13,24 +13,28 @@
 //
 // Options:
 //
-//	-model string     Path to YOLOX HEF model (default: yolox_s_leaky_hailo8.hef)
+//	-model string     Path to YOLOX HEF model (default: models/yolox_s_leaky_hailo8.hef)
 //	-device string    Hailo device path (default: auto-detect)
 //	-threshold float  Detection confidence threshold (default: 0.5)
 //	-json             Output detections as JSON
 package main
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
+	"math"
 	"os"
 	"time"
 
-	"github.com/anthropics/purple-hailo/pkg/driver"
+	"github.com/anthropics/purple-hailo/pkg/device"
 	"github.com/anthropics/purple-hailo/pkg/hef"
+	"github.com/anthropics/purple-hailo/pkg/stream"
+	"github.com/anthropics/purple-hailo/pkg/transform"
 )
 
 // COCO class ID for person
@@ -54,12 +58,12 @@ type BBox struct {
 
 // DetectionResult holds the inference results
 type DetectionResult struct {
-	ImagePath     string      `json:"image_path"`
-	ImageWidth    int         `json:"image_width"`
-	ImageHeight   int         `json:"image_height"`
-	InferenceMs   float64     `json:"inference_ms"`
-	Detections    []Detection `json:"detections"`
-	PersonCount   int         `json:"person_count"`
+	ImagePath   string      `json:"image_path"`
+	ImageWidth  int         `json:"image_width"`
+	ImageHeight int         `json:"image_height"`
+	InferenceMs float64     `json:"inference_ms"`
+	Detections  []Detection `json:"detections"`
+	PersonCount int         `json:"person_count"`
 }
 
 // Config holds the program configuration
@@ -83,7 +87,7 @@ func main() {
 func parseFlags() Config {
 	var config Config
 
-	flag.StringVar(&config.ModelPath, "model", "yolox_s_leaky_hailo8.hef", "Path to YOLOX HEF model")
+	flag.StringVar(&config.ModelPath, "model", "models/yolox_s_leaky_hailo8.hef", "Path to YOLOX HEF model")
 	flag.StringVar(&config.DevicePath, "device", "", "Hailo device path (auto-detect if empty)")
 	threshold := flag.Float64("threshold", 0.5, "Detection confidence threshold")
 	flag.BoolVar(&config.JSONOutput, "json", false, "Output detections as JSON")
@@ -114,50 +118,33 @@ func parseFlags() Config {
 }
 
 func run(config Config) error {
-	// Step 1: Discover Hailo device
-	devicePath, err := discoverDevice(config.DevicePath)
-	if err != nil {
-		return fmt.Errorf("device discovery: %w", err)
-	}
-
-	if !config.JSONOutput {
-		fmt.Printf("Using device: %s\n", devicePath)
-	}
-
-	// Step 2: Open the device
-	dev, err := driver.OpenDevice(devicePath)
-	if err != nil {
-		return fmt.Errorf("opening device: %w", err)
-	}
-	defer dev.Close()
-
-	// Query and display device info
-	if !config.JSONOutput {
-		if err := printDeviceInfo(dev); err != nil {
-			fmt.Printf("Warning: could not query device info: %v\n", err)
-		}
-	}
-
-	// Step 3: Load and parse the HEF model
+	// Step 1: Load and parse the HEF model first (before device operations)
 	if !config.JSONOutput {
 		fmt.Printf("Loading model: %s\n", config.ModelPath)
 	}
 
-	hefData, err := os.ReadFile(config.ModelPath)
+	hefFile, err := hef.Parse(config.ModelPath)
 	if err != nil {
-		return fmt.Errorf("reading model file: %w", err)
+		return fmt.Errorf("parsing HEF model: %w", err)
 	}
 
-	header, err := hef.ParseHeader(hefData)
+	// Display model information
+	ng, err := hefFile.GetDefaultNetworkGroup()
 	if err != nil {
-		return fmt.Errorf("parsing HEF header: %w", err)
+		return fmt.Errorf("getting network group: %w", err)
 	}
 
 	if !config.JSONOutput {
-		fmt.Printf("Model version: %d, Proto size: %d bytes\n", header.Version, header.HefProtoSize)
+		fmt.Printf("Model: %s\n", ng.Name)
+		fmt.Printf("  Inputs: %d, Outputs: %d\n", len(ng.InputStreams), len(ng.OutputStreams))
+		if ng.HasNmsOutput() {
+			nmsInfo := ng.GetNmsInfo()
+			fmt.Printf("  NMS output: %s (classes=%d, max_per_class=%d)\n",
+				nmsInfo.Name, nmsInfo.NmsShape.NumberOfClasses, nmsInfo.NmsShape.MaxBboxesPerClass)
+		}
 	}
 
-	// Step 4: Load and decode the input image
+	// Step 2: Load and decode the input image
 	img, imgWidth, imgHeight, err := loadImage(config.ImagePath)
 	if err != nil {
 		return fmt.Errorf("loading image: %w", err)
@@ -167,33 +154,76 @@ func run(config Config) error {
 		fmt.Printf("Processing: %s (%dx%d)\n", config.ImagePath, imgWidth, imgHeight)
 	}
 
-	// Step 5: Preprocess the image for YOLOX
-	// YOLOX typically uses 640x640 input
-	inputWidth := 640
-	inputHeight := 640
+	// Step 3: Get input dimensions from model
+	userInputs := ng.GetUserInputs()
+	if len(userInputs) == 0 {
+		return fmt.Errorf("model has no user inputs")
+	}
+	inputStream := userInputs[0]
+	inputWidth := int(inputStream.Shape.Width)
+	inputHeight := int(inputStream.Shape.Height)
+	inputChannels := int(inputStream.Shape.Features)
+
+	if !config.JSONOutput {
+		fmt.Printf("Input tensor: %s (%dx%dx%d)\n", inputStream.Name, inputHeight, inputWidth, inputChannels)
+	}
+
+	// Step 4: Preprocess the image
 	inputData := preprocessImage(img, inputWidth, inputHeight)
 
 	if !config.JSONOutput {
 		fmt.Printf("Preprocessed to %dx%d, %d bytes\n", inputWidth, inputHeight, len(inputData))
 	}
 
-	// Step 6: Run inference (simulated for now - actual inference requires full model loading)
-	startTime := time.Now()
-	detections, err := runInference(dev, inputData, config.Threshold)
-	inferenceTime := time.Since(startTime)
+	// Step 5: Try to run real inference
+	var detections []Detection
+	var inferenceTime time.Duration
+	useRealInference := true
 
-	if err != nil {
-		// For demo purposes, generate mock detections if real inference isn't available
+	// Attempt to open device and run inference
+	dev, deviceErr := openDevice(config.DevicePath)
+	if deviceErr != nil {
 		if !config.JSONOutput {
-			fmt.Printf("Note: Using simulated detections (real inference requires loaded model)\n")
+			fmt.Printf("Warning: Could not open device: %v\n", deviceErr)
+			fmt.Printf("Falling back to simulated detections.\n")
 		}
-		detections = generateMockDetections(config.Threshold)
+		useRealInference = false
 	}
 
-	// Step 7: Filter for person detections only
+	if useRealInference && dev != nil {
+		defer dev.Close()
+
+		if !config.JSONOutput {
+			fmt.Printf("Using device: %s (Driver: %s)\n", dev.Path(), dev.DriverVersion())
+		}
+
+		startTime := time.Now()
+		detections, err = runRealInference(dev, hefFile, ng, inputData, config.Threshold)
+		inferenceTime = time.Since(startTime)
+
+		if err != nil {
+			if !config.JSONOutput {
+				fmt.Printf("Warning: Inference failed: %v\n", err)
+				fmt.Printf("Falling back to simulated detections.\n")
+			}
+			useRealInference = false
+		}
+	}
+
+	// Fallback to simulated detections
+	if !useRealInference {
+		startTime := time.Now()
+		detections = generateMockDetections(config.Threshold)
+		inferenceTime = time.Since(startTime)
+		if !config.JSONOutput {
+			fmt.Printf("Note: Using simulated detections\n")
+		}
+	}
+
+	// Step 6: Filter for person detections only
 	personDetections := filterPersonDetections(detections)
 
-	// Step 8: Output results
+	// Step 7: Output results
 	result := DetectionResult{
 		ImagePath:   config.ImagePath,
 		ImageWidth:  imgWidth,
@@ -210,46 +240,163 @@ func run(config Config) error {
 	return outputText(result)
 }
 
-func discoverDevice(preferredPath string) (string, error) {
+func openDevice(preferredPath string) (*device.Device, error) {
 	if preferredPath != "" {
-		// Verify the specified device exists
-		if _, err := os.Stat(preferredPath); err != nil {
-			return "", fmt.Errorf("specified device %s not found: %w", preferredPath, err)
-		}
-		return preferredPath, nil
+		return device.Open(preferredPath)
 	}
-
-	// Auto-discover devices
-	devices, err := driver.ScanDevices()
-	if err != nil {
-		return "", fmt.Errorf("scanning devices: %w", err)
-	}
-
-	if len(devices) == 0 {
-		return "", fmt.Errorf("no Hailo devices found")
-	}
-
-	return devices[0], nil
+	return device.OpenFirst()
 }
 
-func printDeviceInfo(dev *driver.DeviceFile) error {
-	props, err := dev.QueryDeviceProperties()
+func runRealInference(dev *device.Device, hefFile *hef.Hef, ngInfo *hef.NetworkGroupInfo, inputData []byte, threshold float32) ([]Detection, error) {
+	// Configure the network group
+	cng, err := dev.ConfigureDefaultNetworkGroup(hefFile)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("configuring network group: %w", err)
+	}
+	defer cng.Close()
+
+	// Activate the network group
+	ang, err := cng.Activate()
+	if err != nil {
+		return nil, fmt.Errorf("activating network group: %w", err)
+	}
+	defer ang.Deactivate()
+
+	// Build VStreams
+	params := stream.DefaultVStreamParams()
+	vstreams, err := stream.BuildVStreams(cng, params)
+	if err != nil {
+		return nil, fmt.Errorf("building vstreams: %w", err)
+	}
+	defer vstreams.Close()
+
+	if len(vstreams.Inputs) == 0 {
+		return nil, fmt.Errorf("no input vstreams")
+	}
+	if len(vstreams.Outputs) == 0 {
+		return nil, fmt.Errorf("no output vstreams")
 	}
 
-	info, err := dev.QueryDriverInfo()
-	if err != nil {
-		return err
+	// Write input data
+	inputVStream := vstreams.Inputs[0]
+	if err := inputVStream.Write(inputData); err != nil {
+		return nil, fmt.Errorf("writing input: %w", err)
 	}
 
-	fmt.Printf("Device Info:\n")
-	fmt.Printf("  Board Type: %d\n", props.BoardType)
-	fmt.Printf("  DMA Engines: %d\n", props.DmaEnginesCount)
-	fmt.Printf("  Firmware Loaded: %v\n", props.IsFwLoaded)
-	fmt.Printf("  Driver Version: %d.%d.%d\n", info.MajorVersion, info.MinorVersion, info.RevisionVersion)
+	// Flush input
+	if err := inputVStream.Flush(); err != nil {
+		return nil, fmt.Errorf("flushing input: %w", err)
+	}
 
-	return nil
+	// Read output
+	outputVStream := vstreams.Outputs[0]
+	outputData, err := outputVStream.Read()
+	if err != nil {
+		return nil, fmt.Errorf("reading output: %w", err)
+	}
+
+	// Parse NMS output
+	detections := parseNmsOutput(outputData, ngInfo, threshold)
+
+	return detections, nil
+}
+
+// parseNmsOutput parses the raw NMS output from the model
+func parseNmsOutput(data []byte, ngInfo *hef.NetworkGroupInfo, threshold float32) []Detection {
+	nmsInfo := ngInfo.GetNmsInfo()
+	if nmsInfo == nil {
+		// No NMS, try to parse as raw output
+		return parseRawOutput(data, threshold)
+	}
+
+	// Convert bytes to float32
+	floatData := bytesToFloat32(data)
+
+	numClasses := int(nmsInfo.NmsShape.NumberOfClasses)
+
+	// Parse using NMS format
+	rawDetections := transform.ParseNmsByClass(floatData, numClasses)
+
+	// Filter by threshold
+	rawDetections = transform.FilterByScore(rawDetections, threshold)
+
+	// Convert to our Detection format
+	var detections []Detection
+	for _, d := range rawDetections {
+		detections = append(detections, Detection{
+			ClassID:    d.ClassId,
+			ClassName:  getClassName(d.ClassId),
+			Confidence: d.Score,
+			BBox: BBox{
+				XMin: d.BBox.XMin,
+				YMin: d.BBox.YMin,
+				XMax: d.BBox.XMax,
+				YMax: d.BBox.YMax,
+			},
+		})
+	}
+
+	return detections
+}
+
+// parseRawOutput parses raw detection output (non-NMS models)
+func parseRawOutput(data []byte, threshold float32) []Detection {
+	floatData := bytesToFloat32(data)
+	rawDetections := transform.ParseNmsByScore(floatData)
+	rawDetections = transform.FilterByScore(rawDetections, threshold)
+
+	var detections []Detection
+	for _, d := range rawDetections {
+		detections = append(detections, Detection{
+			ClassID:    d.ClassId,
+			ClassName:  getClassName(d.ClassId),
+			Confidence: d.Score,
+			BBox: BBox{
+				XMin: d.BBox.XMin,
+				YMin: d.BBox.YMin,
+				XMax: d.BBox.XMax,
+				YMax: d.BBox.YMax,
+			},
+		})
+	}
+
+	return detections
+}
+
+// bytesToFloat32 converts a byte slice to float32 slice
+func bytesToFloat32(data []byte) []float32 {
+	if len(data)%4 != 0 {
+		return nil
+	}
+
+	result := make([]float32, len(data)/4)
+	for i := range result {
+		bits := binary.LittleEndian.Uint32(data[i*4 : (i+1)*4])
+		result[i] = math.Float32frombits(bits)
+	}
+	return result
+}
+
+// getClassName returns the COCO class name for a class ID
+func getClassName(classID int) string {
+	cocoClasses := []string{
+		"person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
+		"boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
+		"bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra",
+		"giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
+		"skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
+		"skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup",
+		"fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
+		"broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
+		"potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse",
+		"remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
+		"refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier",
+		"toothbrush",
+	}
+	if classID >= 0 && classID < len(cocoClasses) {
+		return cocoClasses[classID]
+	}
+	return fmt.Sprintf("class_%d", classID)
 }
 
 func loadImage(path string) (image.Image, int, int, error) {
@@ -321,30 +468,6 @@ func preprocessImage(img image.Image, targetWidth, targetHeight int) []byte {
 	}
 
 	return buf
-}
-
-// runInference runs the model on the TPU
-// Note: This is a placeholder - full implementation requires model loading and VDMA setup
-func runInference(dev *driver.DeviceFile, inputData []byte, threshold float32) ([]Detection, error) {
-	// Check if firmware is loaded
-	props, err := dev.QueryDeviceProperties()
-	if err != nil {
-		return nil, fmt.Errorf("querying device: %w", err)
-	}
-
-	if !props.IsFwLoaded {
-		return nil, fmt.Errorf("firmware not loaded on device")
-	}
-
-	// TODO: Implement full inference pipeline:
-	// 1. Configure network group from HEF
-	// 2. Set up input/output VDMA channels
-	// 3. Map input buffer
-	// 4. Launch transfer and wait for completion
-	// 5. Read output buffer
-	// 6. Parse NMS output
-
-	return nil, fmt.Errorf("full inference not yet implemented")
 }
 
 // generateMockDetections creates sample detections for demonstration

@@ -14,7 +14,7 @@ func makeValidHeader(version uint32) []byte {
 
 	binary.LittleEndian.PutUint32(data[0:4], HefMagic)
 	binary.LittleEndian.PutUint32(data[4:8], version)
-	binary.LittleEndian.PutUint32(data[8:12], 1000) // HefProtoSize
+	binary.BigEndian.PutUint32(data[8:12], 1000) // HefProtoSize (big-endian in HEF format)
 
 	return data
 }
@@ -207,18 +207,18 @@ func TestHeaderSizeByVersion(t *testing.T) {
 }
 
 func TestHefMagicValue(t *testing.T) {
-	// HEF magic should be "FEH" followed by 0x01 in little-endian
-	// That's 0x46 ('F'), 0x45 ('E'), 0x48 ('H'), 0x01
-	// In little-endian uint32: 0x01484546
+	// HEF magic is 0x01 followed by "HEF" in the file
+	// File bytes: 0x01, 0x48 ('H'), 0x45 ('E'), 0x46 ('F')
+	// When read as little-endian uint32: 0x46454801
 
-	if HefMagic != 0x01484546 {
-		t.Errorf("HefMagic = 0x%08X, expected 0x01484546", HefMagic)
+	if HefMagic != 0x46454801 {
+		t.Errorf("HefMagic = 0x%08X, expected 0x46454801", HefMagic)
 	}
 
-	// Verify bytes
+	// Verify bytes match what's in a real HEF file
 	var buf [4]byte
 	binary.LittleEndian.PutUint32(buf[:], HefMagic)
-	expected := []byte{'F', 'E', 'H', 0x01}
+	expected := []byte{0x01, 'H', 'E', 'F'}
 	for i, b := range expected {
 		if buf[i] != b {
 			t.Errorf("magic byte[%d] = 0x%02X, expected 0x%02X", i, buf[i], b)
@@ -271,7 +271,7 @@ func TestVersionV3ParserRejectsV2Data(t *testing.T) {
 
 func TestProtoSizeExtraction(t *testing.T) {
 	data := makeValidHeader(HefVersionV2)
-	binary.LittleEndian.PutUint32(data[8:12], 12345)
+	binary.BigEndian.PutUint32(data[8:12], 12345) // HEF uses big-endian for proto size
 
 	header, err := ParseHeader(data)
 	if err != nil {
@@ -288,7 +288,7 @@ func TestMinimumValidHeader(t *testing.T) {
 	data := make([]byte, 12)
 	binary.LittleEndian.PutUint32(data[0:4], HefMagic)
 	binary.LittleEndian.PutUint32(data[4:8], HefVersionV0)
-	binary.LittleEndian.PutUint32(data[8:12], 100)
+	binary.BigEndian.PutUint32(data[8:12], 100) // HEF uses big-endian for proto size
 
 	header, err := ParseHeader(data)
 	if err != nil {
