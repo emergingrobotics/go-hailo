@@ -277,19 +277,30 @@ func runRealInference(dev *device.Device, hefFile *hef.Hef, ngInfo *hef.NetworkG
 		return nil, fmt.Errorf("no output vstreams")
 	}
 
-	// Write input data
 	inputVStream := vstreams.Inputs[0]
+	outputVStream := vstreams.Outputs[0]
+
+	// IMPORTANT: For proper inference flow, we need to:
+	// 1. Start the output read first (post the receive buffer)
+	// 2. Then write the input data
+	// 3. Then wait for both to complete
+
+	// Step 1: Start the output read (non-blocking - just posts the buffer)
+	if err := outputVStream.StartRead(); err != nil {
+		return nil, fmt.Errorf("starting output read: %w", err)
+	}
+
+	// Step 2: Write input data
 	if err := inputVStream.Write(inputData); err != nil {
 		return nil, fmt.Errorf("writing input: %w", err)
 	}
 
-	// Flush input
+	// Step 3: Flush input (wait for input DMA to complete)
 	if err := inputVStream.Flush(); err != nil {
 		return nil, fmt.Errorf("flushing input: %w", err)
 	}
 
-	// Read output
-	outputVStream := vstreams.Outputs[0]
+	// Step 4: Read output (wait for output DMA to complete)
 	outputData, err := outputVStream.Read()
 	if err != nil {
 		return nil, fmt.Errorf("reading output: %w", err)

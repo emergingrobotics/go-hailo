@@ -97,7 +97,7 @@ func TestFullInferencePipeline(t *testing.T) {
 		t.Fatalf("Failed to configure: %v", err)
 	}
 	defer ng.Deactivate()
-	t.Logf("Network group configured: %s", ng.Name)
+	t.Logf("Network group configured: %s", ng.Name())
 
 	// Step 5: Create VStreams
 	t.Log("Step 5: Creating VStreams...")
@@ -560,6 +560,8 @@ type mockHef struct {
 type mockNetworkGroup struct {
 	name string
 }
+
+func (ng *mockNetworkGroup) Name() string { return ng.name }
 
 func (ng *mockNetworkGroup) Deactivate() error { return nil }
 func (ng *mockNetworkGroup) InputStreams() []string { return []string{"input0"} }

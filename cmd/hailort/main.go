@@ -32,6 +32,8 @@ func main() {
 			os.Exit(1)
 		}
 		deviceInfo(args[0])
+	case "debug":
+		printDebugInfo()
 	case "version":
 		printVersion()
 	case "help", "--help", "-h":
@@ -51,8 +53,26 @@ func printUsage() {
 	fmt.Println("Commands:")
 	fmt.Println("  scan              Scan for Hailo devices")
 	fmt.Println("  info <device>     Show device information")
+	fmt.Println("  debug             Print IOCTL debug information")
 	fmt.Println("  version           Print version information")
 	fmt.Println("  help              Show this help")
+}
+
+func printDebugInfo() {
+	fmt.Println("IOCTL Debug Information")
+	fmt.Println()
+	fmt.Printf("Expected Driver Version: %d.%d.%d\n",
+		driver.HailoDrvVerMajor, driver.HailoDrvVerMinor, driver.HailoDrvVerRevision)
+	fmt.Println()
+	fmt.Println("Struct Sizes:")
+	fmt.Printf("  DeviceProperties:     %d bytes\n", driver.SizeOfDeviceProperties)
+	fmt.Printf("  DriverInfo:           %d bytes\n", driver.SizeOfDriverInfo)
+	fmt.Printf("  VdmaBufferMapParams:  %d bytes\n", driver.SizeOfVdmaBufferMapParams)
+	fmt.Printf("  DescListCreateParams: %d bytes\n", driver.SizeOfDescListCreateParams)
+	fmt.Println()
+	fmt.Println("IOCTL Command Codes:")
+	fmt.Printf("  QueryDeviceProperties: 0x%08x\n", driver.GetIoctlQueryDeviceProperties())
+	fmt.Printf("  QueryDriverInfo:       0x%08x\n", driver.GetIoctlQueryDriverInfo())
 }
 
 func printVersion() {

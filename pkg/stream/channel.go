@@ -3,6 +3,7 @@ package stream
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/anthropics/purple-hailo/pkg/driver"
 )
@@ -118,10 +119,15 @@ func (c *VdmaChannel) LaunchTransfer(descList *DescriptorList, buffer *Buffer, s
 
 // WaitForInterrupt waits for transfer completion interrupt
 func (c *VdmaChannel) WaitForInterrupt() error {
+	return c.WaitForInterruptWithTimeout(driver.InferenceTimeout)
+}
+
+// WaitForInterruptWithTimeout waits for transfer completion with a custom timeout
+func (c *VdmaChannel) WaitForInterruptWithTimeout(timeout time.Duration) error {
 	var bitmap [driver.MaxVdmaEngines]uint32
 	bitmap[c.engineIndex] = 1 << c.channelIndex
 
-	_, err := c.device.VdmaInterruptsWait(bitmap)
+	_, err := c.device.VdmaInterruptsWaitWithTimeout(bitmap, timeout)
 	return err
 }
 

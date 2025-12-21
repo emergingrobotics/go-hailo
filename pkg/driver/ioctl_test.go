@@ -8,7 +8,8 @@ import (
 
 func TestIoctlQueryDevicePropertiesCode(t *testing.T) {
 	// Calculate expected IOCTL code
-	// Direction: Write (1), Type: 'g' (0x67), Nr: 1, Size: 32
+	// Direction: Write (1) - matches Hailo driver which uses _IOW_ for queries
+	// Type: 'g' (0x67), Nr: 1, Size: 32
 	cmd := ioctlQueryDeviceProperties
 
 	// Verify direction bits

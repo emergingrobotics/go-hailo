@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unsafe"
 )
 
 func skipIfNoDevice(t *testing.T) string {
@@ -212,7 +213,7 @@ func TestBufferMapUnmapReal(t *testing.T) {
 
 	// Map buffer for write (to device)
 	handle, err := dev.VdmaBufferMap(
-		uintptr(&buf[0]),
+		uintptr(unsafe.Pointer(&buf[0])),
 		bufferSize,
 		DmaToDevice,
 		DmaUserPtrBuffer,
@@ -250,7 +251,7 @@ func TestBufferMapMultiple(t *testing.T) {
 	for i := 0; i < numBuffers; i++ {
 		buffers[i] = make([]byte, bufferSize)
 		handles[i], err = dev.VdmaBufferMap(
-			uintptr(&buffers[i][0]),
+			uintptr(unsafe.Pointer(&buffers[i][0])),
 			bufferSize,
 			DmaBidirectional,
 			DmaUserPtrBuffer,
@@ -292,7 +293,7 @@ func TestBufferSync(t *testing.T) {
 	}
 
 	handle, err := dev.VdmaBufferMap(
-		uintptr(&buf[0]),
+		uintptr(unsafe.Pointer(&buf[0])),
 		bufferSize,
 		DmaBidirectional,
 		DmaUserPtrBuffer,
@@ -522,7 +523,7 @@ func BenchmarkVdmaBufferMapUnmap(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		handle, err := dev.VdmaBufferMap(
-			uintptr(&buf[0]),
+			uintptr(unsafe.Pointer(&buf[0])),
 			bufSize,
 			DmaToDevice,
 			DmaUserPtrBuffer,
@@ -550,7 +551,7 @@ func BenchmarkBufferSync(b *testing.B) {
 	buf := make([]byte, bufSize)
 
 	handle, err := dev.VdmaBufferMap(
-		uintptr(&buf[0]),
+		uintptr(unsafe.Pointer(&buf[0])),
 		bufSize,
 		DmaBidirectional,
 		DmaUserPtrBuffer,
