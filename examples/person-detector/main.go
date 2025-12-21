@@ -17,6 +17,7 @@
 //	-device string    Hailo device path (default: auto-detect)
 //	-threshold float  Detection confidence threshold (default: 0.5)
 //	-json             Output detections as JSON
+//	-test, -t         Use simulated detections (no device required)
 package main
 
 import (
@@ -72,6 +73,7 @@ type Config struct {
 	DevicePath string
 	Threshold  float32
 	JSONOutput bool
+	TestMode   bool
 	ImagePath  string
 }
 
@@ -91,6 +93,8 @@ func parseFlags() Config {
 	flag.StringVar(&config.DevicePath, "device", "", "Hailo device path (auto-detect if empty)")
 	threshold := flag.Float64("threshold", 0.5, "Detection confidence threshold")
 	flag.BoolVar(&config.JSONOutput, "json", false, "Output detections as JSON")
+	flag.BoolVar(&config.TestMode, "test", false, "Use simulated detections (no device required)")
+	flag.BoolVar(&config.TestMode, "t", false, "Use simulated detections (shorthand for -test)")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Person Detector - Detect persons in images using YOLOX on Hailo-8 TPU\n\n")
@@ -175,22 +179,24 @@ func run(config Config) error {
 		fmt.Printf("Preprocessed to %dx%d, %d bytes\n", inputWidth, inputHeight, len(inputData))
 	}
 
-	// Step 5: Try to run real inference
+	// Step 5: Run inference (or use simulated detections in test mode)
 	var detections []Detection
 	var inferenceTime time.Duration
-	useRealInference := true
 
-	// Attempt to open device and run inference
-	dev, deviceErr := openDevice(config.DevicePath)
-	if deviceErr != nil {
+	if config.TestMode {
+		// Test mode: use simulated detections
+		startTime := time.Now()
+		detections = generateMockDetections(config.Threshold)
+		inferenceTime = time.Since(startTime)
 		if !config.JSONOutput {
-			fmt.Printf("Warning: Could not open device: %v\n", deviceErr)
-			fmt.Printf("Falling back to simulated detections.\n")
+			fmt.Printf("Note: Using simulated detections (test mode)\n")
 		}
-		useRealInference = false
-	}
-
-	if useRealInference && dev != nil {
+	} else {
+		// Real inference mode: open device and run inference
+		dev, err := openDevice(config.DevicePath)
+		if err != nil {
+			return fmt.Errorf("opening device: %w", err)
+		}
 		defer dev.Close()
 
 		if !config.JSONOutput {
@@ -199,25 +205,10 @@ func run(config Config) error {
 
 		startTime := time.Now()
 		detections, err = runRealInference(dev, hefFile, ng, inputData, config.Threshold)
-		inferenceTime = time.Since(startTime)
-
 		if err != nil {
-			if !config.JSONOutput {
-				fmt.Printf("Warning: Inference failed: %v\n", err)
-				fmt.Printf("Falling back to simulated detections.\n")
-			}
-			useRealInference = false
+			return fmt.Errorf("running inference: %w", err)
 		}
-	}
-
-	// Fallback to simulated detections
-	if !useRealInference {
-		startTime := time.Now()
-		detections = generateMockDetections(config.Threshold)
 		inferenceTime = time.Since(startTime)
-		if !config.JSONOutput {
-			fmt.Printf("Note: Using simulated detections\n")
-		}
 	}
 
 	// Step 6: Filter for person detections only
