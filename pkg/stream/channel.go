@@ -95,26 +95,28 @@ func (c *VdmaChannel) LaunchTransfer(descList *DescriptorList, buffer *Buffer, s
 		return fmt.Errorf("channel not enabled")
 	}
 
-	params := driver.VdmaLaunchTransferParams{
-		EngineIndex:           c.engineIndex,
-		ChannelIndex:          c.channelIndex,
-		DescHandle:            descList.Handle(),
-		StartingDesc:          startingDesc,
-		ShouldBind:            shouldBind,
-		BuffersCount:          1,
-		FirstInterruptsDomain: firstInterruptsDomain,
-		LastInterruptsDomain:  lastInterruptsDomain,
-		IsDebug:               false,
-	}
+	// Create packed transfer buffer
+	transferBuf := driver.NewPackedVdmaTransferBuffer(buffer.Handle(), 0, uint32(buffer.Size()))
+	buffers := []driver.PackedVdmaTransferBuffer{*transferBuf}
 
-	// Set up the buffer reference
-	params.Buffers[0] = driver.VdmaTransferBuffer{
-		BufferType: driver.DmaUserPtrBuffer,
-		AddrOrFd:   uintptr(buffer.Handle()),
-		Size:       uint32(buffer.Size()),
+	_, status, err := c.device.VdmaLaunchTransfer(
+		c.engineIndex,
+		c.channelIndex,
+		descList.Handle(),
+		startingDesc,
+		shouldBind,
+		buffers,
+		firstInterruptsDomain,
+		lastInterruptsDomain,
+		false, // isDebug
+	)
+	if err != nil {
+		return err
 	}
-
-	return c.device.VdmaLaunchTransfer(&params)
+	if status != 0 {
+		return fmt.Errorf("launch transfer failed with status %d", status)
+	}
+	return nil
 }
 
 // WaitForInterrupt waits for transfer completion interrupt
@@ -205,7 +207,7 @@ func (cs *ChannelSet) DisableAll() error {
 }
 
 // WaitForAnyInterrupt waits for interrupt on any channel in the set
-func (cs *ChannelSet) WaitForAnyInterrupt() (*driver.VdmaInterruptsWaitParams, error) {
+func (cs *ChannelSet) WaitForAnyInterrupt() (*driver.PackedVdmaInterruptsWaitParams, error) {
 	cs.mu.Lock()
 	var bitmap [driver.MaxVdmaEngines]uint32
 	for _, ch := range cs.channels {

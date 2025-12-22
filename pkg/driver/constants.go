@@ -12,7 +12,7 @@ const (
 // Driver Version - must match installed driver
 const (
 	HailoDrvVerMajor    = 4
-	HailoDrvVerMinor    = 23
+	HailoDrvVerMinor    = 20
 	HailoDrvVerRevision = 0
 )
 

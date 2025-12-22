@@ -69,21 +69,18 @@ func (dl *DescriptorList) Program(buffer *Buffer, channelIndex uint8, batchSize 
 		return fmt.Errorf("descriptor list already released")
 	}
 
-	params := driver.DescListProgramParams{
-		BufferHandle:         buffer.Handle(),
-		BufferSize:           buffer.Size(),
-		BufferOffset:         0,
-		BatchSize:            batchSize,
-		DescHandle:           dl.handle,
-		ChannelIndex:         channelIndex,
-		StartingDesc:         startingDesc,
-		ShouldBind:           shouldBind,
-		LastInterruptsDomain: interruptsDomain,
-		IsDebug:              false,
-		Stride:               0,
-	}
-
-	return dl.device.DescListProgram(&params)
+	// Note: batchSize is ignored in driver v4.20.0 (no BatchSize field in struct)
+	return dl.device.DescListProgram(
+		buffer.Handle(),
+		buffer.Size(),
+		0, // offset
+		dl.handle,
+		channelIndex,
+		startingDesc,
+		shouldBind,
+		interruptsDomain,
+		false, // isDebug
+	)
 }
 
 // ProgramWithOffset programs the descriptor list with buffer information and offset
@@ -95,21 +92,18 @@ func (dl *DescriptorList) ProgramWithOffset(buffer *Buffer, offset uint64, size 
 		return fmt.Errorf("descriptor list already released")
 	}
 
-	params := driver.DescListProgramParams{
-		BufferHandle:         buffer.Handle(),
-		BufferSize:           size,
-		BufferOffset:         offset,
-		BatchSize:            batchSize,
-		DescHandle:           dl.handle,
-		ChannelIndex:         channelIndex,
-		StartingDesc:         startingDesc,
-		ShouldBind:           shouldBind,
-		LastInterruptsDomain: interruptsDomain,
-		IsDebug:              false,
-		Stride:               0,
-	}
-
-	return dl.device.DescListProgram(&params)
+	// Note: batchSize is ignored in driver v4.20.0 (no BatchSize field in struct)
+	return dl.device.DescListProgram(
+		buffer.Handle(),
+		size,
+		offset,
+		dl.handle,
+		channelIndex,
+		startingDesc,
+		shouldBind,
+		interruptsDomain,
+		false, // isDebug
+	)
 }
 
 // Release releases the descriptor list

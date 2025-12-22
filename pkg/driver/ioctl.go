@@ -123,24 +123,25 @@ func (d *DeviceFile) ioctlWithTimeout(ctx context.Context, cmd uint32, arg unsaf
 
 // IOCTL command codes (calculated from type and size)
 // Note: Hailo driver uses _IOW_ for query operations (counterintuitive but matches driver source)
+// IMPORTANT: Use packed struct sizes to match C structs with #pragma pack(1)
 var (
 	ioctlQueryDeviceProperties = IoW(int(HailoGeneralIoctlMagic), IoctlQueryDeviceProperties, SizeOfDeviceProperties)
 	ioctlQueryDriverInfo       = IoW(int(HailoGeneralIoctlMagic), IoctlQueryDriverInfo, SizeOfDriverInfo)
 
-	ioctlVdmaEnableChannels          = IoR(int(HailoVdmaIoctlMagic), IoctlVdmaEnableChannels, SizeOfVdmaEnableChannelsParams)
-	ioctlVdmaDisableChannels         = IoR(int(HailoVdmaIoctlMagic), IoctlVdmaDisableChannels, SizeOfVdmaDisableChannelsParams)
-	ioctlVdmaInterruptsWait          = IoWR(int(HailoVdmaIoctlMagic), IoctlVdmaInterruptsWait, SizeOfVdmaInterruptsWaitParams)
-	ioctlVdmaBufferMap               = IoWR(int(HailoVdmaIoctlMagic), IoctlVdmaBufferMap, SizeOfVdmaBufferMapParams)
-	ioctlVdmaBufferUnmap             = IoR(int(HailoVdmaIoctlMagic), IoctlVdmaBufferUnmap, SizeOfVdmaBufferUnmapParams)
-	ioctlVdmaBufferSync              = IoR(int(HailoVdmaIoctlMagic), IoctlVdmaBufferSync, SizeOfVdmaBufferSyncParams)
-	ioctlDescListCreate              = IoWR(int(HailoVdmaIoctlMagic), IoctlDescListCreate, SizeOfDescListCreateParams)
-	ioctlDescListRelease             = IoR(int(HailoVdmaIoctlMagic), IoctlDescListRelease, SizeOfDescListReleaseParams)
-	ioctlDescListProgram             = IoR(int(HailoVdmaIoctlMagic), IoctlDescListProgram, SizeOfDescListProgramParams)
-	ioctlVdmaLaunchTransfer          = IoR(int(HailoVdmaIoctlMagic), IoctlVdmaLaunchTransfer, SizeOfVdmaLaunchTransferParams)
+	ioctlVdmaEnableChannels  = IoR(int(HailoVdmaIoctlMagic), IoctlVdmaEnableChannels, SizeOfPackedVdmaEnableChannelsParams)
+	ioctlVdmaDisableChannels = IoR(int(HailoVdmaIoctlMagic), IoctlVdmaDisableChannels, SizeOfPackedVdmaDisableChannelsParams)
+	ioctlVdmaInterruptsWait  = IoWR(int(HailoVdmaIoctlMagic), IoctlVdmaInterruptsWait, SizeOfPackedVdmaInterruptsWaitParams)
+	ioctlVdmaBufferMap       = IoWR(int(HailoVdmaIoctlMagic), IoctlVdmaBufferMap, SizeOfPackedVdmaBufferMapParams)
+	ioctlVdmaBufferUnmap     = IoR(int(HailoVdmaIoctlMagic), IoctlVdmaBufferUnmap, SizeOfPackedVdmaBufferUnmapParams)
+	ioctlVdmaBufferSync      = IoR(int(HailoVdmaIoctlMagic), IoctlVdmaBufferSync, SizeOfPackedVdmaBufferSyncParams)
+	ioctlDescListCreate      = IoWR(int(HailoVdmaIoctlMagic), IoctlDescListCreate, SizeOfPackedDescListCreateParams)
+	ioctlDescListRelease     = IoR(int(HailoVdmaIoctlMagic), IoctlDescListRelease, SizeOfPackedDescListReleaseParams)
+	ioctlDescListProgram     = IoR(int(HailoVdmaIoctlMagic), IoctlDescListProgram, SizeOfPackedDescListProgramParams)
+	ioctlVdmaLaunchTransfer  = IoWR(int(HailoVdmaIoctlMagic), IoctlVdmaLaunchTransfer, SizeOfPackedVdmaLaunchTransferParams)
 
-	ioctlFwControl       = IoWR(int(HailoNncIoctlMagic), IoctlFwControl, SizeOfFwControl)
+	ioctlFwControl        = IoWR(int(HailoNncIoctlMagic), IoctlFwControl, SizeOfFwControl)
 	ioctlReadNotification = IoW(int(HailoNncIoctlMagic), IoctlReadNotification, SizeOfD2hNotification)
-	ioctlResetNnCore     = Io(int(HailoNncIoctlMagic), IoctlResetNnCore)
+	ioctlResetNnCore      = Io(int(HailoNncIoctlMagic), IoctlResetNnCore)
 )
 
 // QueryDeviceProperties queries device properties via IOCTL
@@ -188,96 +189,70 @@ func (d *DeviceFile) QueryDriverInfo() (*DriverInfo, error) {
 
 // VdmaEnableChannels enables VDMA channels
 func (d *DeviceFile) VdmaEnableChannels(channelsBitmap [MaxVdmaEngines]uint32, enableTimestamps bool) error {
-	params := VdmaEnableChannelsParams{
-		ChannelsBitmapPerEngine: channelsBitmap,
-		EnableTimestampsMeasure: enableTimestamps,
-	}
-	return d.ioctl(ioctlVdmaEnableChannels, unsafe.Pointer(&params))
+	params := NewPackedVdmaEnableChannelsParams(channelsBitmap, enableTimestamps)
+	return d.ioctl(ioctlVdmaEnableChannels, unsafe.Pointer(params))
 }
 
 // VdmaDisableChannels disables VDMA channels
 func (d *DeviceFile) VdmaDisableChannels(channelsBitmap [MaxVdmaEngines]uint32) error {
-	params := VdmaDisableChannelsParams{
-		ChannelsBitmapPerEngine: channelsBitmap,
-	}
-	return d.ioctl(ioctlVdmaDisableChannels, unsafe.Pointer(&params))
+	params := NewPackedVdmaDisableChannelsParams(channelsBitmap)
+	return d.ioctl(ioctlVdmaDisableChannels, unsafe.Pointer(params))
 }
 
 // InferenceTimeout is the timeout for inference operations (longer than default)
 const InferenceTimeout = 30 * time.Second
 
 // VdmaInterruptsWait waits for VDMA interrupts
-func (d *DeviceFile) VdmaInterruptsWait(channelsBitmap [MaxVdmaEngines]uint32) (*VdmaInterruptsWaitParams, error) {
+func (d *DeviceFile) VdmaInterruptsWait(channelsBitmap [MaxVdmaEngines]uint32) (*PackedVdmaInterruptsWaitParams, error) {
 	return d.VdmaInterruptsWaitWithTimeout(channelsBitmap, InferenceTimeout)
 }
 
 // VdmaInterruptsWaitWithTimeout waits for VDMA interrupts with a custom timeout
-func (d *DeviceFile) VdmaInterruptsWaitWithTimeout(channelsBitmap [MaxVdmaEngines]uint32, timeout time.Duration) (*VdmaInterruptsWaitParams, error) {
-	params := VdmaInterruptsWaitParams{
-		ChannelsBitmapPerEngine: channelsBitmap,
-	}
-	err := d.ioctlWithTimeout(nil, ioctlVdmaInterruptsWait, unsafe.Pointer(&params), timeout)
+func (d *DeviceFile) VdmaInterruptsWaitWithTimeout(channelsBitmap [MaxVdmaEngines]uint32, timeout time.Duration) (*PackedVdmaInterruptsWaitParams, error) {
+	params := NewPackedVdmaInterruptsWaitParams(channelsBitmap)
+	err := d.ioctlWithTimeout(nil, ioctlVdmaInterruptsWait, unsafe.Pointer(params), timeout)
 	if err != nil {
 		return nil, err
 	}
-	return &params, nil
+	return params, nil
 }
 
 // VdmaBufferMap maps a user buffer for DMA
 func (d *DeviceFile) VdmaBufferMap(userAddr uintptr, size uint64, direction DmaDataDirection, bufferType DmaBufferType) (uint64, error) {
-	params := VdmaBufferMapParams{
-		UserAddress:           userAddr,
-		Size:                  size,
-		DataDirection:         direction,
-		BufferType:            bufferType,
-		AllocatedBufferHandle: ^uintptr(0), // -1 indicates no pre-allocated buffer
-	}
-	err := d.ioctl(ioctlVdmaBufferMap, unsafe.Pointer(&params))
+	params := NewPackedVdmaBufferMapParams(userAddr, size, direction, bufferType, ^uintptr(0))
+	err := d.ioctl(ioctlVdmaBufferMap, unsafe.Pointer(params))
 	if err != nil {
 		return 0, err
 	}
-	return params.MappedHandle, nil
+	return params.MappedHandle(), nil
 }
 
 // VdmaBufferUnmap unmaps a previously mapped buffer
 func (d *DeviceFile) VdmaBufferUnmap(handle uint64) error {
-	params := VdmaBufferUnmapParams{
-		MappedHandle: handle,
-	}
-	return d.ioctl(ioctlVdmaBufferUnmap, unsafe.Pointer(&params))
+	params := NewPackedVdmaBufferUnmapParams(handle)
+	return d.ioctl(ioctlVdmaBufferUnmap, unsafe.Pointer(params))
 }
 
 // VdmaBufferSync synchronizes a buffer between CPU and device
 func (d *DeviceFile) VdmaBufferSync(handle uint64, syncType BufferSyncType, offset, count uint64) error {
-	params := VdmaBufferSyncParams{
-		Handle:   handle,
-		SyncType: syncType,
-		Offset:   offset,
-		Count:    count,
-	}
-	return d.ioctl(ioctlVdmaBufferSync, unsafe.Pointer(&params))
+	params := NewPackedVdmaBufferSyncParams(handle, syncType, offset, count)
+	return d.ioctl(ioctlVdmaBufferSync, unsafe.Pointer(params))
 }
 
 // DescListCreate creates a descriptor list
 func (d *DeviceFile) DescListCreate(descCount uint64, pageSize uint16, isCircular bool) (uintptr, uint64, error) {
-	params := DescListCreateParams{
-		DescCount:    descCount,
-		DescPageSize: pageSize,
-		IsCircular:   isCircular,
-	}
-	err := d.ioctl(ioctlDescListCreate, unsafe.Pointer(&params))
+	params := NewPackedDescListCreateParams(descCount, pageSize, isCircular)
+	err := d.ioctl(ioctlDescListCreate, unsafe.Pointer(params))
 	if err != nil {
 		return 0, 0, err
 	}
-	return params.DescHandle, params.DmaAddress, nil
+	return params.DescHandle(), params.DmaAddress(), nil
 }
 
 // DescListRelease releases a descriptor list
 func (d *DeviceFile) DescListRelease(handle uintptr) error {
-	params := DescListReleaseParams{
-		DescHandle: handle,
-	}
-	return d.ioctl(ioctlDescListRelease, unsafe.Pointer(&params))
+	params := NewPackedDescListReleaseParams(handle)
+	return d.ioctl(ioctlDescListRelease, unsafe.Pointer(params))
 }
 
 // FwControl sends a firmware control message
@@ -311,13 +286,19 @@ func (d *DeviceFile) ResetNnCore() error {
 }
 
 // DescListProgram programs a descriptor list with buffer information
-func (d *DeviceFile) DescListProgram(params *DescListProgramParams) error {
+func (d *DeviceFile) DescListProgram(bufferHandle, bufferSize, bufferOffset uint64, descHandle uintptr, channelIndex uint8, startingDesc uint32, shouldBind bool, lastInterruptsDomain InterruptsDomain, isDebug bool) error {
+	params := NewPackedDescListProgramParams(bufferHandle, bufferSize, bufferOffset, descHandle, channelIndex, startingDesc, shouldBind, lastInterruptsDomain, isDebug)
 	return d.ioctl(ioctlDescListProgram, unsafe.Pointer(params))
 }
 
 // VdmaLaunchTransfer launches a VDMA transfer
-func (d *DeviceFile) VdmaLaunchTransfer(params *VdmaLaunchTransferParams) error {
-	return d.ioctl(ioctlVdmaLaunchTransfer, unsafe.Pointer(params))
+func (d *DeviceFile) VdmaLaunchTransfer(engineIndex, channelIndex uint8, descHandle uintptr, startingDesc uint32, shouldBind bool, buffers []PackedVdmaTransferBuffer, firstDomain, lastDomain InterruptsDomain, isDebug bool) (uint32, int32, error) {
+	params := NewPackedVdmaLaunchTransferParams(engineIndex, channelIndex, descHandle, startingDesc, shouldBind, buffers, firstDomain, lastDomain, isDebug)
+	err := d.ioctl(ioctlVdmaLaunchTransfer, unsafe.Pointer(params))
+	if err != nil {
+		return 0, 0, err
+	}
+	return params.DescsProgramed(), params.LaunchTransferStatus(), nil
 }
 
 // ReadNotification reads a device-to-host notification
