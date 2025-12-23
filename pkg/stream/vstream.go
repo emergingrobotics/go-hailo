@@ -133,13 +133,12 @@ func (vs *InputVStream) Write(data []byte) error {
 		return fmt.Errorf("buffer sync failed: %w", err)
 	}
 
-	// Program descriptor list
+	// Program descriptor list (4.20.0: no batchSize parameter)
 	err := vs.descList.Program(
 		vs.buffer,
 		vs.channel.ChannelIndex(),
-		vs.batchSize,
-		0,
-		true,
+		0,    // startingDesc
+		true, // shouldBind
 		driver.InterruptsDomainDevice,
 	)
 	if err != nil {
@@ -302,13 +301,12 @@ func (vs *OutputVStream) StartRead() error {
 		return fmt.Errorf("read already pending")
 	}
 
-	// Program descriptor list
+	// Program descriptor list (4.20.0: no batchSize parameter)
 	err := vs.descList.Program(
 		vs.buffer,
 		vs.channel.ChannelIndex(),
-		vs.batchSize,
-		0,
-		true,
+		0,    // startingDesc
+		true, // shouldBind
 		driver.InterruptsDomainHost,
 	)
 	if err != nil {
@@ -343,13 +341,12 @@ func (vs *OutputVStream) Read() ([]byte, error) {
 
 	// If no read is pending, start one
 	if !vs.pending {
-		// Program descriptor list
+		// Program descriptor list (4.20.0: no batchSize parameter)
 		err := vs.descList.Program(
 			vs.buffer,
 			vs.channel.ChannelIndex(),
-			vs.batchSize,
-			0,
-			true,
+			0,    // startingDesc
+			true, // shouldBind
 			driver.InterruptsDomainHost,
 		)
 		if err != nil {

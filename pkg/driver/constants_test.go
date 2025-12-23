@@ -32,8 +32,8 @@ func TestDriverVersionConstants(t *testing.T) {
 	if HailoDrvVerMajor != 4 {
 		t.Errorf("expected major version 4, got %d", HailoDrvVerMajor)
 	}
-	if HailoDrvVerMinor != 23 {
-		t.Errorf("expected minor version 23, got %d", HailoDrvVerMinor)
+	if HailoDrvVerMinor != 20 {
+		t.Errorf("expected minor version 20, got %d", HailoDrvVerMinor)
 	}
 	if HailoDrvVerRevision != 0 {
 		t.Errorf("expected revision 0, got %d", HailoDrvVerRevision)
@@ -55,7 +55,7 @@ func TestVdmaConstants(t *testing.T) {
 		{"HailoVdmaMaxOngoingTransfers", HailoVdmaMaxOngoingTransfers, 128},
 		{"ChannelIrqTimestampsSize", ChannelIrqTimestampsSize, 256},
 		{"MaxControlLength", MaxControlLength, 1500},
-		{"HailoMaxBuffersPerSingleTransfer", HailoMaxBuffersPerSingleTransfer, 8},
+		{"HailoMaxBuffersPerSingleTransfer", HailoMaxBuffersPerSingleTransfer, 2}, // 2 in 4.20.0
 		{"PcieExpectedMd5Length", PcieExpectedMd5Length, 16},
 		{"MaxFwLogBufferLength", MaxFwLogBufferLength, 512},
 		{"MaxNotificationLength", MaxNotificationLength, 1500},

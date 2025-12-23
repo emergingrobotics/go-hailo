@@ -27,7 +27,7 @@ const (
 	HailoVdmaMaxOngoingTransfers         = 128
 	ChannelIrqTimestampsSize             = HailoVdmaMaxOngoingTransfers * 2
 	MaxControlLength                     = 1500
-	HailoMaxBuffersPerSingleTransfer     = 8
+	HailoMaxBuffersPerSingleTransfer     = 2 // 2 in 4.20.0, 8 in 4.23.0
 	PcieExpectedMd5Length                = 16
 	MaxFwLogBufferLength                 = 512
 	MaxNotificationLength                = 1500

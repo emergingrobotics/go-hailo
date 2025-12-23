@@ -118,6 +118,15 @@ func (b *Buffer) Handle() uint64 {
 	return b.mappedHandle
 }
 
+// UserAddr returns the user-space address of the buffer data.
+// This is needed for VDMA transfer operations which use the user address.
+func (b *Buffer) UserAddr() uintptr {
+	if len(b.data) == 0 {
+		return 0
+	}
+	return uintptr(unsafe.Pointer(&b.data[0]))
+}
+
 // Direction returns the DMA direction
 func (b *Buffer) Direction() driver.DmaDataDirection {
 	return b.direction

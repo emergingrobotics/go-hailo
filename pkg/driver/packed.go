@@ -127,16 +127,16 @@ func NewPackedVdmaDisableChannelsParams(bitmap [MaxVdmaEngines]uint32) *PackedVd
 	return &p
 }
 
-// PackedVdmaInterruptsWaitParams: 685 bytes
+// PackedVdmaInterruptsWaitParams: 685 bytes (driver 4.20.0)
 // struct hailo_vdma_interrupts_wait_params {
 //     uint32_t channels_bitmap_per_engine[MAX_VDMA_ENGINES]; // 12 bytes, offset 0
 //     uint8_t channels_count;                                 // 1 byte, offset 12 (output)
 //     struct hailo_vdma_interrupts_channel_data irq_data[96]; // 672 bytes, offset 13
 // };
-// hailo_vdma_interrupts_channel_data is 7 bytes:
+// hailo_vdma_interrupts_channel_data is 7 bytes (driver 4.20.0):
 //   engine_index(1) + channel_index(1) + is_active(1) + transfers_completed(1) +
 //   host_error(1) + device_error(1) + validation_success(1)
-const PackedVdmaInterruptsWaitParamsSize = 12 + 1 + (MaxVdmaChannelsPerEngine * MaxVdmaEngines * 7)
+const PackedVdmaInterruptsWaitParamsSize = 12 + 1 + (MaxVdmaChannelsPerEngine * MaxVdmaEngines * 7) // = 685
 
 type PackedVdmaInterruptsWaitParams [685]byte
 
@@ -152,13 +152,14 @@ func (p *PackedVdmaInterruptsWaitParams) ChannelsCount() uint8 {
 	return p[12]
 }
 
-// IrqData returns the interrupt data for a channel at the given index
+// IrqData returns the interrupt data for a channel at the given index (driver 4.20.0 format).
+// Returns all 7 fields from hailo_vdma_interrupts_channel_data.
 func (p *PackedVdmaInterruptsWaitParams) IrqData(idx int) (engineIndex, channelIndex uint8, isActive bool, transfersCompleted, hostError, deviceError uint8, validationSuccess bool) {
-	offset := 13 + idx*7
+	offset := 13 + idx*7 // 7 bytes per entry
 	return p[offset], p[offset+1], p[offset+2] != 0, p[offset+3], p[offset+4], p[offset+5], p[offset+6] != 0
 }
 
-// PackedDescListProgramParams: 43 bytes
+// PackedDescListProgramParams: 43 bytes (driver 4.20.0)
 // struct hailo_desc_list_program_params {
 //     size_t buffer_handle;                                    // 8 bytes, offset 0
 //     size_t buffer_size;                                      // 8 bytes, offset 8
@@ -170,6 +171,7 @@ func (p *PackedVdmaInterruptsWaitParams) IrqData(idx int) (engineIndex, channelI
 //     enum hailo_vdma_interrupts_domain last_interrupts_domain;// 4 bytes, offset 38
 //     bool is_debug;                                           // 1 byte,  offset 42
 // };
+// NOTE: Driver 4.20.0 does NOT have batch_size or stride fields!
 type PackedDescListProgramParams [43]byte
 
 func NewPackedDescListProgramParams(bufferHandle, bufferSize, bufferOffset uint64, descHandle uintptr, channelIndex uint8, startingDesc uint32, shouldBind bool, lastInterruptsDomain InterruptsDomain, isDebug bool) *PackedDescListProgramParams {
@@ -190,10 +192,10 @@ func NewPackedDescListProgramParams(bufferHandle, bufferSize, bufferOffset uint6
 	return &p
 }
 
-// MaxBuffersPerSingleTransfer matches HAILO_MAX_BUFFERS_PER_SINGLE_TRANSFER
+// MaxBuffersPerSingleTransfer matches HAILO_MAX_BUFFERS_PER_SINGLE_TRANSFER (driver 4.20.0)
 const MaxBuffersPerSingleTransfer = 2
 
-// PackedVdmaTransferBuffer: 16 bytes
+// PackedVdmaTransferBuffer: 16 bytes (driver 4.20.0)
 // struct hailo_vdma_transfer_buffer {
 //     size_t mapped_buffer_handle;  // 8 bytes, offset 0
 //     uint32_t offset;              // 4 bytes, offset 8
@@ -209,7 +211,7 @@ func NewPackedVdmaTransferBuffer(mappedHandle uint64, offset, size uint32) *Pack
 	return &p
 }
 
-// PackedVdmaLaunchTransferParams: 65 bytes
+// PackedVdmaLaunchTransferParams: 65 bytes (driver 4.20.0)
 // struct hailo_vdma_launch_transfer_params {
 //     uint8_t engine_index;                                    // 1 byte,  offset 0
 //     uint8_t channel_index;                                   // 1 byte,  offset 1
@@ -224,6 +226,7 @@ func NewPackedVdmaTransferBuffer(mappedHandle uint64, offset, size uint32) *Pack
 //     uint32_t descs_programed;                                // 4 bytes, offset 57 (output)
 //     int launch_transfer_status;                              // 4 bytes, offset 61 (output)
 // };
+// NOTE: Driver 4.20.0 uses _IOWR_ and HAS output fields!
 type PackedVdmaLaunchTransferParams [65]byte
 
 func NewPackedVdmaLaunchTransferParams(engineIndex, channelIndex uint8, descHandle uintptr, startingDesc uint32, shouldBind bool, buffers []PackedVdmaTransferBuffer, firstDomain, lastDomain InterruptsDomain, isDebug bool) *PackedVdmaLaunchTransferParams {
@@ -258,6 +261,25 @@ func (p *PackedVdmaLaunchTransferParams) LaunchTransferStatus() int32 {
 	return int32(binary.LittleEndian.Uint32(p[61:65]))
 }
 
+// PackedWriteActionListParams: 24 bytes
+// struct hailo_write_action_list_params {
+//     uintptr_t data;             // 8 bytes, offset 0 (pointer to data)
+//     size_t size;                // 8 bytes, offset 8
+//     uint64_t dma_address;       // 8 bytes, offset 16 (output)
+// };
+type PackedWriteActionListParams [24]byte
+
+func NewPackedWriteActionListParams(dataPtr uintptr, size uint64) *PackedWriteActionListParams {
+	var p PackedWriteActionListParams
+	binary.LittleEndian.PutUint64(p[0:8], uint64(dataPtr))
+	binary.LittleEndian.PutUint64(p[8:16], size)
+	return &p
+}
+
+func (p *PackedWriteActionListParams) DmaAddress() uint64 {
+	return binary.LittleEndian.Uint64(p[16:24])
+}
+
 // Packed size constants for ioctl commands
 const (
 	SizeOfPackedDescListCreateParams       = int(unsafe.Sizeof(PackedDescListCreateParams{}))
@@ -270,4 +292,5 @@ const (
 	SizeOfPackedVdmaDisableChannelsParams  = int(unsafe.Sizeof(PackedVdmaDisableChannelsParams{}))
 	SizeOfPackedVdmaInterruptsWaitParams   = int(unsafe.Sizeof(PackedVdmaInterruptsWaitParams{}))
 	SizeOfPackedVdmaLaunchTransferParams   = int(unsafe.Sizeof(PackedVdmaLaunchTransferParams{}))
+	SizeOfPackedWriteActionListParams      = int(unsafe.Sizeof(PackedWriteActionListParams{}))
 )

@@ -88,6 +88,14 @@ func extractNetworkGroupInfo(ng *hefpb.ProtoHEFNetworkGroup) NetworkGroupInfo {
 			// This is a core op - extract streams from contexts
 			coreOp := op.GetCoreOp()
 			extractStreamsFromCoreOp(coreOp, &info)
+
+			// Also extract configuration from core op
+			if coreOp.PreliminaryConfig != nil {
+				info.PreliminaryConfig = extractPreliminaryConfig(coreOp.PreliminaryConfig)
+			}
+			for _, ctx := range coreOp.Contexts {
+				info.Contexts = append(info.Contexts, extractContextConfig(ctx))
+			}
 		}
 	}
 
@@ -95,6 +103,18 @@ func extractNetworkGroupInfo(ng *hefpb.ProtoHEFNetworkGroup) NetworkGroupInfo {
 	for _, ctx := range ng.Contexts {
 		if ctx.Metadata != nil {
 			extractStreamsFromContext(ctx.Metadata, &info)
+		}
+	}
+
+	// Extract preliminary config at network group level if present
+	if ng.PreliminaryConfig != nil && info.PreliminaryConfig == nil {
+		info.PreliminaryConfig = extractPreliminaryConfig(ng.PreliminaryConfig)
+	}
+
+	// Extract contexts at network group level if not already extracted
+	if len(info.Contexts) == 0 {
+		for _, ctx := range ng.Contexts {
+			info.Contexts = append(info.Contexts, extractContextConfig(ctx))
 		}
 	}
 
@@ -108,6 +128,88 @@ func extractNetworkGroupInfo(ng *hefpb.ProtoHEFNetworkGroup) NetworkGroupInfo {
 	}
 
 	return info
+}
+
+// extractPreliminaryConfig extracts preliminary configuration from protobuf
+func extractPreliminaryConfig(pc *hefpb.ProtoHEFPreliminaryConfig) *PreliminaryConfig {
+	if pc == nil {
+		return nil
+	}
+
+	config := &PreliminaryConfig{}
+	for _, op := range pc.Operation {
+		config.Operations = append(config.Operations, extractConfigOperation(op))
+	}
+	return config
+}
+
+// extractContextConfig extracts context configuration from protobuf
+func extractContextConfig(ctx *hefpb.ProtoHEFContext) ContextConfig {
+	config := ContextConfig{
+		Index: ctx.ContextIndex,
+	}
+	for _, op := range ctx.Operations {
+		config.Operations = append(config.Operations, extractConfigOperation(op))
+	}
+	return config
+}
+
+// extractConfigOperation extracts a configuration operation from protobuf
+func extractConfigOperation(op *hefpb.ProtoHEFOperation) ConfigOperation {
+	config := ConfigOperation{}
+	for _, action := range op.Actions {
+		config.Actions = append(config.Actions, extractConfigAction(action))
+	}
+	return config
+}
+
+// extractConfigAction extracts a single configuration action from protobuf
+func extractConfigAction(action *hefpb.ProtoHEFAction) ConfigAction {
+	ca := ConfigAction{}
+
+	switch a := action.Action.(type) {
+	case *hefpb.ProtoHEFAction_WriteData:
+		ca.Type = ActionTypeWriteData
+		if a.WriteData != nil {
+			ca.Address = a.WriteData.Address
+			ca.Data = a.WriteData.Data
+		}
+	case *hefpb.ProtoHEFAction_WriteDataCcw:
+		ca.Type = ActionTypeWriteDataCcw
+		if a.WriteDataCcw != nil {
+			// WriteDataCcw doesn't have an address, use channel index instead
+			ca.Address = uint64(a.WriteDataCcw.CfgChannelIndex)
+			ca.Data = a.WriteDataCcw.Data
+		}
+	case *hefpb.ProtoHEFAction_EnableSequencer:
+		ca.Type = ActionTypeEnableSequencer
+	case *hefpb.ProtoHEFAction_WaitForSeqeuncer:
+		ca.Type = ActionTypeWaitForSequencer
+	case *hefpb.ProtoHEFAction_DisableLcu:
+		ca.Type = ActionTypeDisableLcu
+	case *hefpb.ProtoHEFAction_EnableLcu:
+		ca.Type = ActionTypeEnableLcu
+	case *hefpb.ProtoHEFAction_None:
+		ca.Type = ActionTypeNone
+	case *hefpb.ProtoHEFAction_AllowInputDataflow:
+		ca.Type = ActionTypeAllowInputDataflow
+	case *hefpb.ProtoHEFAction_WaitForModuleConfigDone:
+		ca.Type = ActionTypeWaitForModuleConfigDone
+	case *hefpb.ProtoHEFAction_EnableNms:
+		ca.Type = ActionTypeEnableNms
+	case *hefpb.ProtoHEFAction_WriteDataByType:
+		ca.Type = ActionTypeWriteDataByType
+		if a.WriteDataByType != nil {
+			ca.Address = a.WriteDataByType.Address
+			ca.Data = a.WriteDataByType.Data
+		}
+	case *hefpb.ProtoHEFAction_SwitchLcuBatch:
+		ca.Type = ActionTypeSwitchLcuBatch
+	default:
+		ca.Type = ActionTypeNone
+	}
+
+	return ca
 }
 
 // extractStreamsFromCoreOp extracts streams from a core operation

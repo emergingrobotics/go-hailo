@@ -124,6 +124,7 @@ func (d *DeviceFile) ioctlWithTimeout(ctx context.Context, cmd uint32, arg unsaf
 // IOCTL command codes (calculated from type and size)
 // Note: Hailo driver uses _IOW_ for query operations (counterintuitive but matches driver source)
 // IMPORTANT: Use packed struct sizes to match C structs with #pragma pack(1)
+// IMPORTANT: IOCTL directions must match hailo_ioctl_common.h exactly!
 var (
 	ioctlQueryDeviceProperties = IoW(int(HailoGeneralIoctlMagic), IoctlQueryDeviceProperties, SizeOfDeviceProperties)
 	ioctlQueryDriverInfo       = IoW(int(HailoGeneralIoctlMagic), IoctlQueryDriverInfo, SizeOfDriverInfo)
@@ -137,11 +138,12 @@ var (
 	ioctlDescListCreate      = IoWR(int(HailoVdmaIoctlMagic), IoctlDescListCreate, SizeOfPackedDescListCreateParams)
 	ioctlDescListRelease     = IoR(int(HailoVdmaIoctlMagic), IoctlDescListRelease, SizeOfPackedDescListReleaseParams)
 	ioctlDescListProgram     = IoR(int(HailoVdmaIoctlMagic), IoctlDescListProgram, SizeOfPackedDescListProgramParams)
-	ioctlVdmaLaunchTransfer  = IoWR(int(HailoVdmaIoctlMagic), IoctlVdmaLaunchTransfer, SizeOfPackedVdmaLaunchTransferParams)
+	ioctlVdmaLaunchTransfer  = IoWR(int(HailoVdmaIoctlMagic), IoctlVdmaLaunchTransfer, SizeOfPackedVdmaLaunchTransferParams) // _IOWR_ in 4.20.0
 
-	ioctlFwControl        = IoWR(int(HailoNncIoctlMagic), IoctlFwControl, SizeOfFwControl)
-	ioctlReadNotification = IoW(int(HailoNncIoctlMagic), IoctlReadNotification, SizeOfD2hNotification)
-	ioctlResetNnCore      = Io(int(HailoNncIoctlMagic), IoctlResetNnCore)
+	ioctlFwControl         = IoWR(int(HailoNncIoctlMagic), IoctlFwControl, SizeOfFwControl)
+	ioctlReadNotification  = IoW(int(HailoNncIoctlMagic), IoctlReadNotification, SizeOfD2hNotification)
+	ioctlResetNnCore       = Io(int(HailoNncIoctlMagic), IoctlResetNnCore)
+	ioctlWriteActionList   = IoWR(int(HailoNncIoctlMagic), IoctlWriteActionList, SizeOfPackedWriteActionListParams)
 )
 
 // QueryDeviceProperties queries device properties via IOCTL
@@ -285,13 +287,16 @@ func (d *DeviceFile) ResetNnCore() error {
 	return d.ioctl(ioctlResetNnCore, nil)
 }
 
-// DescListProgram programs a descriptor list with buffer information
+// DescListProgram programs a descriptor list with buffer information (driver 4.20.0).
+// Note: Driver 4.20.0 does NOT have batch_size or stride fields.
 func (d *DeviceFile) DescListProgram(bufferHandle, bufferSize, bufferOffset uint64, descHandle uintptr, channelIndex uint8, startingDesc uint32, shouldBind bool, lastInterruptsDomain InterruptsDomain, isDebug bool) error {
 	params := NewPackedDescListProgramParams(bufferHandle, bufferSize, bufferOffset, descHandle, channelIndex, startingDesc, shouldBind, lastInterruptsDomain, isDebug)
 	return d.ioctl(ioctlDescListProgram, unsafe.Pointer(params))
 }
 
-// VdmaLaunchTransfer launches a VDMA transfer
+// VdmaLaunchTransfer launches a VDMA transfer (driver 4.20.0).
+// Returns descs_programed and launch_transfer_status from the kernel.
+// The transfer is launched asynchronously; use VdmaInterruptsWait to wait for completion.
 func (d *DeviceFile) VdmaLaunchTransfer(engineIndex, channelIndex uint8, descHandle uintptr, startingDesc uint32, shouldBind bool, buffers []PackedVdmaTransferBuffer, firstDomain, lastDomain InterruptsDomain, isDebug bool) (uint32, int32, error) {
 	params := NewPackedVdmaLaunchTransferParams(engineIndex, channelIndex, descHandle, startingDesc, shouldBind, buffers, firstDomain, lastDomain, isDebug)
 	err := d.ioctl(ioctlVdmaLaunchTransfer, unsafe.Pointer(params))
@@ -299,6 +304,20 @@ func (d *DeviceFile) VdmaLaunchTransfer(engineIndex, channelIndex uint8, descHan
 		return 0, 0, err
 	}
 	return params.DescsProgramed(), params.LaunchTransferStatus(), nil
+}
+
+// WriteActionList writes an action list to the device
+// The data is copied to the device and a DMA address is returned
+func (d *DeviceFile) WriteActionList(data []byte) (uint64, error) {
+	if len(data) == 0 {
+		return 0, nil
+	}
+	params := NewPackedWriteActionListParams(uintptr(unsafe.Pointer(&data[0])), uint64(len(data)))
+	err := d.ioctl(ioctlWriteActionList, unsafe.Pointer(params))
+	if err != nil {
+		return 0, err
+	}
+	return params.DmaAddress(), nil
 }
 
 // ReadNotification reads a device-to-host notification

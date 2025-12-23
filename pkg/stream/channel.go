@@ -95,11 +95,12 @@ func (c *VdmaChannel) LaunchTransfer(descList *DescriptorList, buffer *Buffer, s
 		return fmt.Errorf("channel not enabled")
 	}
 
-	// Create packed transfer buffer
+	// Create packed transfer buffer with 4.20.0 layout:
+	// mapped_buffer_handle (8 bytes), offset (4 bytes), size (4 bytes)
 	transferBuf := driver.NewPackedVdmaTransferBuffer(buffer.Handle(), 0, uint32(buffer.Size()))
 	buffers := []driver.PackedVdmaTransferBuffer{*transferBuf}
 
-	_, status, err := c.device.VdmaLaunchTransfer(
+	descsProgramed, launchStatus, err := c.device.VdmaLaunchTransfer(
 		c.engineIndex,
 		c.channelIndex,
 		descList.Handle(),
@@ -113,9 +114,12 @@ func (c *VdmaChannel) LaunchTransfer(descList *DescriptorList, buffer *Buffer, s
 	if err != nil {
 		return err
 	}
-	if status != 0 {
-		return fmt.Errorf("launch transfer failed with status %d", status)
+
+	// Check launch status from kernel
+	if launchStatus != 0 {
+		return fmt.Errorf("launch transfer failed with status %d (descs_programed=%d)", launchStatus, descsProgramed)
 	}
+
 	return nil
 }
 

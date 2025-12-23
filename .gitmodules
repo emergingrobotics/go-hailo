@@ -1,3 +1,36 @@
 [submodule "hailo_model_zoo"]
 	path = hailo_model_zoo
 	url = https://github.com/hailo-ai/hailo_model_zoo.git
+[submodule "repos/hailort"]
+	path = repos/hailort
+	url = https://github.com/hailo-ai/hailort.git
+	branch = hailo8
+[submodule "repos/hailort-drivers"]
+	path = repos/hailort-drivers
+	url = https://github.com/hailo-ai/hailort-drivers.git
+	branch = hailo8
+[submodule "repos/hailo-rpi5-examples"]
+	path = repos/hailo-rpi5-examples
+	url = https://github.com/hailo-ai/hailo-rpi5-examples.git
+[submodule "repos/hailo_model_zoo"]
+	path = repos/hailo_model_zoo
+	url = https://github.com/hailo-ai/hailo_model_zoo.git
+[submodule "repos/tappas"]
+	path = repos/tappas
+	url = https://github.com/hailo-ai/tappas.git
+[submodule "repos/Hailo-Application-Code-Examples"]
+	path = repos/Hailo-Application-Code-Examples
+	url = https://github.com/hailo-ai/Hailo-Application-Code-Examples.git
+[submodule "repos/hailo-apps-infra"]
+	path = repos/hailo-apps-infra
+	url = https://github.com/hailo-ai/hailo-apps-infra.git
+[submodule "repos/hailo-CLIP"]
+	path = repos/hailo-CLIP
+	url = https://github.com/hailo-ai/hailo-CLIP.git
+[submodule "repos/hailo-BEV"]
+	path = repos/hailo-BEV
+	url = https://github.com/hailo-ai/hailo-BEV.git
+[submodule "repos/meta-hailo"]
+	path = repos/meta-hailo
+	url = https://github.com/hailo-ai/meta-hailo.git
+	branch = hailo8-kirkstone

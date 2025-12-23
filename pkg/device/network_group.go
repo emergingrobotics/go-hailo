@@ -1,8 +1,10 @@
 package device
 
 import (
+	"fmt"
 	"sync"
 
+	"github.com/anthropics/purple-hailo/pkg/control"
 	"github.com/anthropics/purple-hailo/pkg/hef"
 )
 
@@ -35,6 +37,10 @@ type ConfiguredNetworkGroup struct {
 	inputs  []StreamInfo
 	outputs []StreamInfo
 	mu      sync.RWMutex
+
+	// Control protocol state
+	networkGroupIndex uint8  // Index of this network group (0 for first/default)
+	controlSequence   uint32 // Incrementing sequence number for control messages
 }
 
 // Name returns the network group name
@@ -122,11 +128,91 @@ func (ng *ConfiguredNetworkGroup) Activate() (*ActivatedNetworkGroup, error) {
 		return nil, ErrInvalidState
 	}
 
-	// TODO: Actually configure the device via IOCTL
-	// This would involve:
-	// 1. Writing action lists for preliminary config
-	// 2. Programming VDMA descriptors
-	// 3. Enabling VDMA channels
+	// Only call firmware if we have a real device (not a mock)
+	if ng.device != nil && ng.device.DeviceFile() != nil {
+		// Step 0: Clear any previously configured apps
+		ng.controlSequence++
+		fmt.Printf("[activate] Clearing configured apps (sequence %d)\n", ng.controlSequence)
+		if err := control.ClearConfiguredApps(ng.device.DeviceFile(), ng.controlSequence); err != nil {
+			fmt.Printf("[activate] Warning: clear_configured_apps failed: %v (continuing anyway)\n", err)
+		}
+
+		// Step 1: Send network group header
+		ng.controlSequence++
+		fmt.Printf("[activate] Sending network group header (sequence %d)\n", ng.controlSequence)
+
+		// Count dynamic contexts from HEF
+		dynamicContextsCount := uint16(len(ng.info.Contexts))
+		if dynamicContextsCount == 0 {
+			dynamicContextsCount = 1 // At least one context
+		}
+
+		// Create application header with HEF metadata (v4.20.0 format)
+		appHeader := control.CreateDefaultApplicationHeader(dynamicContextsCount)
+
+		err := control.SetNetworkGroupHeader(
+			ng.device.DeviceFile(),
+			ng.controlSequence,
+			appHeader,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("set_network_group_header failed: %w", err)
+		}
+		fmt.Printf("[activate] Network group header sent successfully\n")
+
+		// Step 2: Send context info for each context type
+		// The firmware requires context info even if empty
+		fmt.Printf("[activate] Sending context info...\n")
+
+		// Send ACTIVATION context (empty for now)
+		if err := control.SendContextInfoChunks(ng.device.DeviceFile(), &ng.controlSequence,
+			control.ContextTypeActivation, []byte{}); err != nil {
+			return nil, fmt.Errorf("send activation context failed: %w", err)
+		}
+		fmt.Printf("[activate] Activation context sent\n")
+
+		// Send BATCH_SWITCHING context (empty)
+		if err := control.SendContextInfoChunks(ng.device.DeviceFile(), &ng.controlSequence,
+			control.ContextTypeBatchSwitching, []byte{}); err != nil {
+			return nil, fmt.Errorf("send batch_switching context failed: %w", err)
+		}
+		fmt.Printf("[activate] Batch switching context sent\n")
+
+		// Send PRELIMINARY context (empty)
+		if err := control.SendContextInfoChunks(ng.device.DeviceFile(), &ng.controlSequence,
+			control.ContextTypePreliminary, []byte{}); err != nil {
+			return nil, fmt.Errorf("send preliminary context failed: %w", err)
+		}
+		fmt.Printf("[activate] Preliminary context sent\n")
+
+		// Send DYNAMIC contexts (one per HEF context)
+		for i := 0; i < int(dynamicContextsCount); i++ {
+			if err := control.SendContextInfoChunks(ng.device.DeviceFile(), &ng.controlSequence,
+				control.ContextTypeDynamic, []byte{}); err != nil {
+				return nil, fmt.Errorf("send dynamic context %d failed: %w", i, err)
+			}
+			fmt.Printf("[activate] Dynamic context %d sent\n", i)
+		}
+
+		// Step 3: Enable core op
+		ng.controlSequence++
+		fmt.Printf("[activate] Enabling core op for network group %d (sequence %d)\n",
+			ng.networkGroupIndex, ng.controlSequence)
+
+		err = control.EnableCoreOp(
+			ng.device.DeviceFile(),
+			ng.controlSequence,
+			ng.networkGroupIndex,
+			0, // dynamic batch size (0 = use default)
+			0, // batch count (0 = infinite)
+		)
+		if err != nil {
+			return nil, fmt.Errorf("enable_core_op failed: %w", err)
+		}
+		fmt.Printf("[activate] Core op enabled successfully\n")
+	} else {
+		fmt.Printf("[activate] No device, skipping firmware calls\n")
+	}
 
 	ng.state = StateActivated
 	return &ActivatedNetworkGroup{
@@ -163,7 +249,23 @@ func (ang *ActivatedNetworkGroup) Deactivate() error {
 		return nil
 	}
 
-	// TODO: Actually disable VDMA channels via IOCTL
+	// Only call firmware if we have a real device (not a mock)
+	if ang.configured.device != nil && ang.configured.device.DeviceFile() != nil {
+		ang.configured.controlSequence++
+		fmt.Printf("[deactivate] Resetting context switch state machine (sequence %d)\n",
+			ang.configured.controlSequence)
+
+		err := control.ResetContextSwitchStateMachine(
+			ang.configured.device.DeviceFile(),
+			ang.configured.controlSequence,
+		)
+		if err != nil {
+			// Log but don't fail - deactivation should still proceed
+			fmt.Printf("[deactivate] Warning: reset_context_switch_state_machine failed: %v\n", err)
+		} else {
+			fmt.Printf("[deactivate] Context switch state machine reset successfully\n")
+		}
+	}
 
 	ang.configured.mu.Lock()
 	ang.configured.state = StateDeactivated

@@ -61,7 +61,8 @@ func (dl *DescriptorList) IsCircular() bool {
 }
 
 // Program programs the descriptor list with buffer information
-func (dl *DescriptorList) Program(buffer *Buffer, channelIndex uint8, batchSize uint32, startingDesc uint32, shouldBind bool, interruptsDomain driver.InterruptsDomain) error {
+// Note: Driver 4.20.0 does NOT have batch_size or stride fields
+func (dl *DescriptorList) Program(buffer *Buffer, channelIndex uint8, startingDesc uint32, shouldBind bool, interruptsDomain driver.InterruptsDomain) error {
 	dl.mu.Lock()
 	defer dl.mu.Unlock()
 
@@ -69,7 +70,6 @@ func (dl *DescriptorList) Program(buffer *Buffer, channelIndex uint8, batchSize 
 		return fmt.Errorf("descriptor list already released")
 	}
 
-	// Note: batchSize is ignored in driver v4.20.0 (no BatchSize field in struct)
 	return dl.device.DescListProgram(
 		buffer.Handle(),
 		buffer.Size(),
@@ -84,7 +84,8 @@ func (dl *DescriptorList) Program(buffer *Buffer, channelIndex uint8, batchSize 
 }
 
 // ProgramWithOffset programs the descriptor list with buffer information and offset
-func (dl *DescriptorList) ProgramWithOffset(buffer *Buffer, offset uint64, size uint64, channelIndex uint8, batchSize uint32, startingDesc uint32, shouldBind bool, interruptsDomain driver.InterruptsDomain) error {
+// Note: Driver 4.20.0 does NOT have batch_size or stride fields
+func (dl *DescriptorList) ProgramWithOffset(buffer *Buffer, offset uint64, size uint64, channelIndex uint8, startingDesc uint32, shouldBind bool, interruptsDomain driver.InterruptsDomain) error {
 	dl.mu.Lock()
 	defer dl.mu.Unlock()
 
@@ -92,7 +93,6 @@ func (dl *DescriptorList) ProgramWithOffset(buffer *Buffer, offset uint64, size 
 		return fmt.Errorf("descriptor list already released")
 	}
 
-	// Note: batchSize is ignored in driver v4.20.0 (no BatchSize field in struct)
 	return dl.device.DescListProgram(
 		buffer.Handle(),
 		size,

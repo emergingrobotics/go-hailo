@@ -332,9 +332,10 @@ func TestVdmaInterruptsWaitParamsSize(t *testing.T) {
 func TestVdmaLaunchTransferParamsSize(t *testing.T) {
 	got := SizeOfVdmaLaunchTransferParams
 	// Complex struct, verify it's a reasonable size
-	// 8 Buffers * 24 bytes each = 192 + other fields ~40 = ~232
-	if got < 200 {
-		t.Errorf("VdmaLaunchTransferParams size = %d, expected >= 200", got)
+	// Driver 4.20.0: 2 Buffers * 24 bytes each = 48 + other fields ~40 = ~88
+	// Driver 4.23.0: 8 Buffers * 24 bytes each = 192 + other fields ~40 = ~232
+	if got < 60 {
+		t.Errorf("VdmaLaunchTransferParams size = %d, expected >= 60", got)
 	}
 	t.Logf("VdmaLaunchTransferParams size = %d", got)
 }

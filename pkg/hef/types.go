@@ -224,12 +224,55 @@ type NetworkGroupInfo struct {
 	OutputVStreams     []VStreamInfo
 	BottleneckFps      float64
 	IsMultiContext     bool
+	PreliminaryConfig  *PreliminaryConfig
+	Contexts           []ContextConfig
 }
 
 // NetworkInfo represents information about a single network
 type NetworkInfo struct {
 	Name        string
 	GroupName   string
+}
+
+// ActionType represents the type of configuration action
+type ActionType int
+
+const (
+	ActionTypeWriteData ActionType = iota
+	ActionTypeWriteDataCcw
+	ActionTypeEnableSequencer
+	ActionTypeWaitForSequencer
+	ActionTypeDisableLcu
+	ActionTypeEnableLcu
+	ActionTypeNone
+	ActionTypeAllowInputDataflow
+	ActionTypeWaitForModuleConfigDone
+	ActionTypeEnableNms
+	ActionTypeWriteDataByType
+	ActionTypeSwitchLcuBatch
+)
+
+// ConfigAction represents a single configuration action
+type ConfigAction struct {
+	Type    ActionType
+	Address uint64
+	Data    []byte
+}
+
+// ConfigOperation represents a configuration operation with multiple actions
+type ConfigOperation struct {
+	Actions []ConfigAction
+}
+
+// PreliminaryConfig holds the preliminary configuration for a network group
+type PreliminaryConfig struct {
+	Operations []ConfigOperation
+}
+
+// ContextConfig holds configuration for a specific context
+type ContextConfig struct {
+	Index      uint32
+	Operations []ConfigOperation
 }
 
 // Hef represents a parsed HEF file
@@ -239,6 +282,7 @@ type Hef struct {
 	NetworkGroups   []NetworkGroupInfo
 	Hash            string
 	rawData         []byte
+	protoHef        interface{} // Keep the raw protobuf for configuration extraction
 }
 
 // ParseHeader parses the HEF header from raw bytes
