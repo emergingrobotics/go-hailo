@@ -161,37 +161,62 @@ func (ng *ConfiguredNetworkGroup) Activate() (*ActivatedNetworkGroup, error) {
 		fmt.Printf("[activate] Network group header sent successfully\n")
 
 		// Step 2: Send context info for each context type
-		// The firmware requires context info even if empty
+		// Build action lists from HEF context configurations
 		fmt.Printf("[activate] Sending context info...\n")
 
-		// Send ACTIVATION context (empty for now)
+		// Send ACTIVATION context - typically empty for most models
+		// ACTIVATION context runs during activation (not inference)
+		activationData := control.BuildEmptyActionList()
 		if err := control.SendContextInfoChunks(ng.device.DeviceFile(), &ng.controlSequence,
-			control.ContextTypeActivation, []byte{}); err != nil {
+			control.ContextTypeActivation, activationData); err != nil {
 			return nil, fmt.Errorf("send activation context failed: %w", err)
 		}
-		fmt.Printf("[activate] Activation context sent\n")
+		fmt.Printf("[activate] Activation context sent (%d bytes)\n", len(activationData))
 
-		// Send BATCH_SWITCHING context (empty)
+		// Send BATCH_SWITCHING context - typically empty
+		batchSwitchingData := control.BuildEmptyActionList()
 		if err := control.SendContextInfoChunks(ng.device.DeviceFile(), &ng.controlSequence,
-			control.ContextTypeBatchSwitching, []byte{}); err != nil {
+			control.ContextTypeBatchSwitching, batchSwitchingData); err != nil {
 			return nil, fmt.Errorf("send batch_switching context failed: %w", err)
 		}
-		fmt.Printf("[activate] Batch switching context sent\n")
+		fmt.Printf("[activate] Batch switching context sent (%d bytes)\n", len(batchSwitchingData))
 
-		// Send PRELIMINARY context (empty)
+		// Send PRELIMINARY context from HEF
+		preliminaryData := []byte{}
+		if ng.info.PreliminaryConfig != nil && len(ng.info.PreliminaryConfig.Operations) > 0 {
+			var err error
+			preliminaryData, err = control.BuildContextActionList(ng.info.PreliminaryConfig.Operations)
+			if err != nil {
+				fmt.Printf("[activate] Warning: failed to build preliminary action list: %v\n", err)
+				preliminaryData = control.BuildEmptyActionList()
+			}
+		} else {
+			preliminaryData = control.BuildEmptyActionList()
+		}
 		if err := control.SendContextInfoChunks(ng.device.DeviceFile(), &ng.controlSequence,
-			control.ContextTypePreliminary, []byte{}); err != nil {
+			control.ContextTypePreliminary, preliminaryData); err != nil {
 			return nil, fmt.Errorf("send preliminary context failed: %w", err)
 		}
-		fmt.Printf("[activate] Preliminary context sent\n")
+		fmt.Printf("[activate] Preliminary context sent (%d bytes)\n", len(preliminaryData))
 
-		// Send DYNAMIC contexts (one per HEF context)
+		// Send DYNAMIC contexts from HEF (one per HEF context)
 		for i := 0; i < int(dynamicContextsCount); i++ {
+			var dynamicData []byte
+			if i < len(ng.info.Contexts) && len(ng.info.Contexts[i].Operations) > 0 {
+				var err error
+				dynamicData, err = control.BuildContextActionList(ng.info.Contexts[i].Operations)
+				if err != nil {
+					fmt.Printf("[activate] Warning: failed to build dynamic context %d action list: %v\n", i, err)
+					dynamicData = control.BuildEmptyActionList()
+				}
+			} else {
+				dynamicData = control.BuildEmptyActionList()
+			}
 			if err := control.SendContextInfoChunks(ng.device.DeviceFile(), &ng.controlSequence,
-				control.ContextTypeDynamic, []byte{}); err != nil {
+				control.ContextTypeDynamic, dynamicData); err != nil {
 				return nil, fmt.Errorf("send dynamic context %d failed: %w", i, err)
 			}
-			fmt.Printf("[activate] Dynamic context %d sent\n", i)
+			fmt.Printf("[activate] Dynamic context %d sent (%d bytes)\n", i, len(dynamicData))
 		}
 
 		// Step 3: Enable core op

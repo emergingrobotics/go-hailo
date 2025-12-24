@@ -2,6 +2,7 @@ package control
 
 import (
 	"crypto/md5"
+	"encoding/binary"
 	"fmt"
 	"log"
 
@@ -137,6 +138,67 @@ func ResetContextSwitchStateMachine(device *driver.DeviceFile, sequence uint32) 
 	}
 
 	return nil
+}
+
+// Reset types from control_protocol.h
+const (
+	ResetTypeChip       = 0 // Full chip reset
+	ResetTypeNNCore     = 1 // NN Core reset
+	ResetTypeSoft       = 2 // Soft reset
+	ResetTypeForcedSoft = 3 // Forced soft reset
+)
+
+// Reset sends a reset command to the device.
+// resetType: 0=Chip, 1=NNCore, 2=Soft, 3=ForcedSoft
+func Reset(device *driver.DeviceFile, sequence uint32, resetType uint8) error {
+	header := PackRequestHeader(sequence, OpcodeReset)
+
+	// Parameter 1: reset_type
+	paramCount := make([]byte, 4)
+	binary.BigEndian.PutUint32(paramCount, 1) // 1 parameter
+
+	resetTypeLen := make([]byte, 4)
+	binary.BigEndian.PutUint32(resetTypeLen, 1) // length = 1 byte
+	resetTypeValue := []byte{resetType}
+
+	request := append(header, paramCount...)
+	request = append(request, resetTypeLen...)
+	request = append(request, resetTypeValue...)
+
+	reqMD5 := computeRequestMD5(request)
+
+	log.Printf("[control] Reset: seq=%d, resetType=%d", sequence, resetType)
+
+	// Reset command goes to APP CPU
+	// Note: The firmware may not respond after reset, so we accept timeout
+	response, _, err := device.FwControl(request, reqMD5, DefaultTimeoutMs, CpuIdAppCpu)
+	if err != nil {
+		// Timeout is expected for reset command
+		log.Printf("[control] Reset: FwControl returned: %v (may be expected for reset)", err)
+		return nil // Don't return error for expected timeout
+	}
+
+	if len(response) >= ResponseHeaderSize {
+		// Don't validate opcode for reset - response might have different opcode
+		header, _ := ParseResponseHeader(response)
+		if header != nil && header.MajorStatus != 0 {
+			return fmt.Errorf("reset failed: status=%d", header.MajorStatus)
+		}
+	}
+
+	log.Printf("[control] Reset: success")
+	return nil
+}
+
+// SoftReset sends a soft reset command to the device.
+func SoftReset(device *driver.DeviceFile, sequence uint32) error {
+	return Reset(device, sequence, ResetTypeSoft)
+}
+
+// ResetNNCore sends a NN Core reset command to the device.
+// This specifically resets the neural network processing core.
+func ResetNNCore(device *driver.DeviceFile, sequence uint32) error {
+	return Reset(device, sequence, ResetTypeNNCore)
 }
 
 // ClearConfiguredApps clears all configured applications from the device.

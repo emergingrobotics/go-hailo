@@ -252,11 +252,77 @@ const (
 	ActionTypeSwitchLcuBatch
 )
 
+// EnableLcuParams contains parameters for EnableLcu actions
+type EnableLcuParams struct {
+	LcuIndex           uint32
+	ClusterIndex       uint32
+	KernelDoneAddress  uint32
+	KernelDoneCount    uint32
+	LcuEnableAddress   uint32
+	NetworkIndex       uint32
+}
+
+// DisableLcuParams contains parameters for DisableLcu actions
+type DisableLcuParams struct {
+	LcuIndex         uint32
+	ClusterIndex     uint32
+	LcuEnableAddress uint32
+}
+
+// EnableSequencerParams contains parameters for EnableSequencer actions
+type EnableSequencerParams struct {
+	ClusterIndex    uint32
+	ActiveApuBitmap uint32
+	ActiveScBitmap  uint64
+	ActiveL2Bitmap  uint64
+	ActiveIaBitmap  uint32
+	L2Write0        uint32
+	L2Write1        uint32
+	L2Write2        uint32
+	L2Write3        uint32
+	InitialL3Index  uint32
+	InitialL3Offset uint32
+}
+
+// EnableNmsParams contains parameters for EnableNms actions
+type EnableNmsParams struct {
+	NmsUnitIndex    uint32
+	NetworkIndex    uint32
+	NumberOfClasses uint32
+	BurstSize       uint32
+	DivisionFactor  uint32
+}
+
+// WriteDataByTypeParams contains parameters for WriteDataByType actions
+type WriteDataByTypeParams struct {
+	Address      uint64
+	DataType     uint32
+	Data         []byte
+	Mask         uint32
+	NetworkIndex uint32
+	Shift        uint32
+}
+
+// SwitchLcuBatchParams contains parameters for SwitchLcuBatch actions
+type SwitchLcuBatchParams struct {
+	LcuIndex     uint32
+	ClusterIndex uint32
+	NetworkIndex uint32
+}
+
 // ConfigAction represents a single configuration action
 type ConfigAction struct {
 	Type    ActionType
 	Address uint64
 	Data    []byte
+
+	// Specialized action parameters (one of these will be set based on Type)
+	EnableLcu       *EnableLcuParams
+	DisableLcu      *DisableLcuParams
+	EnableSequencer *EnableSequencerParams
+	EnableNms       *EnableNmsParams
+	WriteDataByType *WriteDataByTypeParams
+	SwitchLcuBatch  *SwitchLcuBatchParams
 }
 
 // ConfigOperation represents a configuration operation with multiple actions

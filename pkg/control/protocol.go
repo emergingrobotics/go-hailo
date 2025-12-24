@@ -283,7 +283,8 @@ func PackSetNetworkGroupHeaderRequest(sequence uint32, appHeader *ApplicationHea
 const InvalidExternalActionListAddress = 0
 
 // MaxContextNetworkDataSize is the maximum data size per SET_CONTEXT_INFO control message
-const MaxContextNetworkDataSize = MaxControlLength - RequestHeaderSize - 4 - 17 // header + param_count + fixed params
+// Total overhead: header (16) + param_count (4) + param1 (5) + param2 (5) + param3 (5) + param4_len (4) = 39 bytes
+const MaxContextNetworkDataSize = MaxControlLength - 39 // = 1461 bytes
 
 // PackSetContextInfoRequest creates a SET_CONTEXT_INFO request
 // Matches CONTROL_PROTOCOL__context_switch_set_context_info_request_t

@@ -183,28 +183,100 @@ func extractConfigAction(action *hefpb.ProtoHEFAction) ConfigAction {
 		}
 	case *hefpb.ProtoHEFAction_EnableSequencer:
 		ca.Type = ActionTypeEnableSequencer
+		if a.EnableSequencer != nil {
+			initialL3Index := uint32(0)
+			initialL3Offset := uint32(0)
+			if a.EnableSequencer.InitialL3Info != nil {
+				initialL3Index = a.EnableSequencer.InitialL3Info.InitialL3Index
+				initialL3Offset = a.EnableSequencer.InitialL3Info.InitialL3Offset
+			}
+			ca.EnableSequencer = &EnableSequencerParams{
+				ClusterIndex:    a.EnableSequencer.ClusterIndex,
+				ActiveApuBitmap: a.EnableSequencer.ActiveApuBitmap,
+				ActiveScBitmap:  a.EnableSequencer.ActiveScBitmap,
+				ActiveL2Bitmap:  a.EnableSequencer.ActiveL2Bitmap,
+				ActiveIaBitmap:  a.EnableSequencer.ActiveIaBitmap,
+				L2Write0:        a.EnableSequencer.L2Write_0,
+				L2Write1:        a.EnableSequencer.L2Write_1,
+				L2Write2:        a.EnableSequencer.L2Write_2,
+				L2Write3:        a.EnableSequencer.L2Write_3,
+				InitialL3Index:  initialL3Index,
+				InitialL3Offset: initialL3Offset,
+			}
+		}
 	case *hefpb.ProtoHEFAction_WaitForSeqeuncer:
 		ca.Type = ActionTypeWaitForSequencer
+		if a.WaitForSeqeuncer != nil {
+			// Store cluster index in Address field for now
+			ca.Address = uint64(a.WaitForSeqeuncer.ClusterIndex)
+		}
 	case *hefpb.ProtoHEFAction_DisableLcu:
 		ca.Type = ActionTypeDisableLcu
+		if a.DisableLcu != nil {
+			ca.DisableLcu = &DisableLcuParams{
+				LcuIndex:         a.DisableLcu.LcuIndex,
+				ClusterIndex:     a.DisableLcu.ClusterIndex,
+				LcuEnableAddress: a.DisableLcu.LcuEnableAddress,
+			}
+		}
 	case *hefpb.ProtoHEFAction_EnableLcu:
 		ca.Type = ActionTypeEnableLcu
+		if a.EnableLcu != nil {
+			ca.EnableLcu = &EnableLcuParams{
+				LcuIndex:          a.EnableLcu.LcuIndex,
+				ClusterIndex:      a.EnableLcu.ClusterIndex,
+				KernelDoneAddress: a.EnableLcu.LcuKernelDoneAddress,
+				KernelDoneCount:   a.EnableLcu.LcuKernelDoneCount,
+				LcuEnableAddress:  a.EnableLcu.LcuEnableAddress,
+				NetworkIndex:      a.EnableLcu.NetworkIndex,
+			}
+		}
 	case *hefpb.ProtoHEFAction_None:
 		ca.Type = ActionTypeNone
 	case *hefpb.ProtoHEFAction_AllowInputDataflow:
 		ca.Type = ActionTypeAllowInputDataflow
+		if a.AllowInputDataflow != nil {
+			ca.Address = uint64(a.AllowInputDataflow.SysIndex)
+		}
 	case *hefpb.ProtoHEFAction_WaitForModuleConfigDone:
 		ca.Type = ActionTypeWaitForModuleConfigDone
+		if a.WaitForModuleConfigDone != nil {
+			ca.Address = uint64(a.WaitForModuleConfigDone.Index)
+		}
 	case *hefpb.ProtoHEFAction_EnableNms:
 		ca.Type = ActionTypeEnableNms
+		if a.EnableNms != nil {
+			ca.EnableNms = &EnableNmsParams{
+				NmsUnitIndex:    a.EnableNms.NmsUnitIndex,
+				NetworkIndex:    a.EnableNms.NetworkIndex,
+				NumberOfClasses: a.EnableNms.NumberOfClasses,
+				BurstSize:       a.EnableNms.BurstSize,
+				DivisionFactor:  a.EnableNms.DivisionFactor,
+			}
+		}
 	case *hefpb.ProtoHEFAction_WriteDataByType:
 		ca.Type = ActionTypeWriteDataByType
 		if a.WriteDataByType != nil {
 			ca.Address = a.WriteDataByType.Address
 			ca.Data = a.WriteDataByType.Data
+			ca.WriteDataByType = &WriteDataByTypeParams{
+				Address:      a.WriteDataByType.Address,
+				DataType:     uint32(a.WriteDataByType.DataType),
+				Data:         a.WriteDataByType.Data,
+				Mask:         a.WriteDataByType.Mask,
+				NetworkIndex: a.WriteDataByType.NetworkIndex,
+				Shift:        a.WriteDataByType.Shift,
+			}
 		}
 	case *hefpb.ProtoHEFAction_SwitchLcuBatch:
 		ca.Type = ActionTypeSwitchLcuBatch
+		if a.SwitchLcuBatch != nil {
+			ca.SwitchLcuBatch = &SwitchLcuBatchParams{
+				LcuIndex:     a.SwitchLcuBatch.LcuIndex,
+				ClusterIndex: a.SwitchLcuBatch.ClusterIndex,
+				NetworkIndex: a.SwitchLcuBatch.NetworkIndex,
+			}
+		}
 	default:
 		ca.Type = ActionTypeNone
 	}
