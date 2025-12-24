@@ -2,6 +2,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 
 namespace hailo_wrapper {
 
@@ -44,8 +45,13 @@ std::unique_ptr<HailoInference> HailoInference::create(const std::string& hef_pa
     }
     engine->m_bindings = bindings_exp.release();
 
-    // Get input info
-    const auto& input = engine->m_infer_model->input();
+    // Get input info - input() returns Expected<InferStream>, need to unwrap
+    auto input_exp = engine->m_infer_model->input();
+    if (!input_exp) {
+        throw std::runtime_error("Failed to get input stream: " +
+            std::to_string(static_cast<int>(input_exp.status())));
+    }
+    const auto& input = input_exp.value();
     auto shape = input.shape();
     engine->m_input_info.height = shape.height;
     engine->m_input_info.width = shape.width;
@@ -53,8 +59,12 @@ std::unique_ptr<HailoInference> HailoInference::create(const std::string& hef_pa
     engine->m_input_info.frame_size = input.get_frame_size();
 
     // Get output size
-    const auto& output = engine->m_infer_model->output();
-    engine->m_output_size = output.get_frame_size();
+    auto output_exp = engine->m_infer_model->output();
+    if (!output_exp) {
+        throw std::runtime_error("Failed to get output stream: " +
+            std::to_string(static_cast<int>(output_exp.status())));
+    }
+    engine->m_output_size = output_exp.value().get_frame_size();
 
     return engine;
 }
@@ -84,8 +94,8 @@ std::vector<Detection> HailoInference::detect(const uint8_t* input_data, size_t 
         throw std::runtime_error("Failed to set output buffer");
     }
 
-    // Run inference
-    status = m_configured_model->run(m_bindings);
+    // Run inference (with default timeout of 10 seconds)
+    status = m_configured_model->run(m_bindings, std::chrono::milliseconds(10000));
     if (status != HAILO_SUCCESS) {
         throw std::runtime_error("Inference failed: " +
             std::to_string(static_cast<int>(status)));
