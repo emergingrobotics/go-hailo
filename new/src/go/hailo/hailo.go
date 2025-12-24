@@ -105,7 +105,7 @@ func (i *Inference) Detect(imageData []byte) ([]Detection, error) {
 
 	// Allocate buffer for detections
 	const maxDetections = 100
-	cDetections := make([]C.hailo_detection_t, maxDetections)
+	cDetections := make([]C.hailo_wrapper_detection_t, maxDetections)
 
 	count := C.hailo_detect(
 		i.handle,

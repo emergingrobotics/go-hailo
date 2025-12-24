@@ -72,7 +72,7 @@ int hailo_detect_people(hailo_inference_t* h,
 int hailo_detect(hailo_inference_t* h,
                  const uint8_t* input_data,
                  size_t input_size,
-                 hailo_detection_t* detections,
+                 hailo_wrapper_detection_t* detections,
                  int max_detections) {
     if (!h) {
         set_error("Invalid handle");
